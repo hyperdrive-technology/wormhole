@@ -1,0 +1,11 @@
+PROGRAM OctalTruncBcd
+VAR
+  Value : INT := 0;
+  Raw : REAL := 1.9;
+  Thumbwheel : WORD := WORD#16#0001;
+  Display : INT := 0;
+END_VAR
+Value := 8#71_061_0;
+Display := TRUNC(Raw);
+Display := WORD_BCD_TO_INT(Thumbwheel);
+END_PROGRAM

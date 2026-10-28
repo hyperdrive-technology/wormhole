@@ -1,0 +1,22 @@
+{
+  "name": "wormhole",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@10.33.2",
+  "scripts": {
+    "build": "pnpm -r run build",
+    "dev": "pnpm --filter @wormhole/ui dev",
+    "test": "pnpm -r run test",
+    "typecheck": "pnpm -r run typecheck",
+    "generate:core-langium": "pnpm --dir \"${HYPERDRIVE_CORE_DIR:-../core}/src/typescript/packages/hyperdrive-ui\" run langium:generate",
+    "test:compile-gate": "pnpm run generate:core-langium && pnpm --filter @wormhole/iec61131-upgrade run test:compile-gate"
+  },
+  "license": "MIT",
+  "engines": {
+    "node": ">=26"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/hyperdrive-technology/wormhole.git"
+  }
+}

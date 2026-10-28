@@ -1,0 +1,29 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://hyperdrive.dev/schemas/hyperdrive-importer-job.v1.schema.json",
+  "title": "Hyperdrive cloud importer job",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "id", "status"],
+  "properties": {
+    "schemaVersion": {
+      "const": "hyperdrive.importer-job.v1"
+    },
+    "id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "status": {
+      "type": "string",
+      "enum": ["queued", "running", "succeeded", "failed", "needs_user_action"]
+    },
+    "diagnosticsUrl": {
+      "type": "string",
+      "format": "uri"
+    },
+    "resultUrl": {
+      "type": "string",
+      "format": "uri"
+    }
+  }
+}

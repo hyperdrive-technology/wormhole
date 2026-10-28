@@ -1,0 +1,10 @@
+node_modules/
+dist/
+.output/
+.vinxi/
+.tanstack/
+*.tsbuildinfo
+coverage/
+.DS_Store
+.env
+.env.*

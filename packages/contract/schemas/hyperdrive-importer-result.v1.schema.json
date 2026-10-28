@@ -1,0 +1,111 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://hyperdrive.dev/schemas/hyperdrive-importer-result.v1.schema.json",
+  "title": "Hyperdrive cloud importer result manifest",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "importerId",
+    "importerVersion",
+    "vendorFamily",
+    "sourceFingerprint",
+    "canonicalSources",
+    "diagnostics"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "hyperdrive.importer-result.v1"
+    },
+    "importerId": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$"
+    },
+    "importerVersion": {
+      "type": "string",
+      "minLength": 1
+    },
+    "vendorFamily": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$"
+    },
+    "sourceFingerprint": {
+      "type": "string",
+      "minLength": 1
+    },
+    "canonicalSources": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "string",
+        "pattern": "^sources/.+\\.plc$",
+        "not": {
+          "pattern": "(^/|(^|/)\\.\\.(/|$)|\\\\)"
+        }
+      },
+      "uniqueItems": true
+    },
+    "assets": {
+      "$ref": "#/$defs/assetsPathList"
+    },
+    "preservation": {
+      "$ref": "#/$defs/preservationPathList"
+    },
+    "diagnostics": {
+      "type": "string",
+      "pattern": "^(diagnostics\\.json|diagnostics/.+\\.json)$",
+      "not": {
+        "pattern": "(^/|(^|/)\\.\\.(/|$)|\\\\)"
+      }
+    },
+    "unsupportedSemantics": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["code", "message"],
+        "properties": {
+          "code": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$"
+          },
+          "message": {
+            "type": "string",
+            "minLength": 1
+          },
+          "severity": {
+            "type": "string",
+            "enum": ["info", "warning", "error"]
+          }
+        }
+      },
+      "default": []
+    }
+  },
+  "$defs": {
+    "assetsPathList": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "pattern": "^assets/.+",
+        "not": {
+          "pattern": "(^/|(^|/)\\.\\.(/|$)|\\\\)"
+        }
+      },
+      "uniqueItems": true,
+      "default": []
+    },
+    "preservationPathList": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "pattern": "^preservation/.+",
+        "not": {
+          "pattern": "(^/|(^|/)\\.\\.(/|$)|\\\\)"
+        }
+      },
+      "uniqueItems": true,
+      "default": []
+    }
+  }
+}

@@ -1,0 +1,57 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://hyperdrive.dev/schemas/hyperdrive-importer-capabilities.v1.schema.json",
+  "title": "Hyperdrive cloud importer capabilities",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "importers"],
+  "properties": {
+    "schemaVersion": {
+      "const": "hyperdrive.importer-capabilities.v1"
+    },
+    "importers": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "vendorFamily", "displayName", "fileExtensions", "maxUploadBytes"],
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$"
+          },
+          "vendorFamily": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$"
+          },
+          "displayName": {
+            "type": "string",
+            "minLength": 1
+          },
+          "fileExtensions": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "string",
+              "pattern": "^\\.[A-Za-z0-9][A-Za-z0-9._-]*$"
+            },
+            "uniqueItems": true
+          },
+          "maxUploadBytes": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "coverageNotes": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            },
+            "default": []
+          }
+        }
+      },
+      "default": []
+    }
+  }
+}

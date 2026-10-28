@@ -1,0 +1,29 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "lib": [
+      "ES2022",
+      "DOM"
+    ],
+    "strict": true,
+    "skipLibCheck": true,
+    "noEmit": true,
+    "baseUrl": ".",
+    "paths": {
+      "@wormhole/contract": [
+        "../../packages/contract/src/index.ts"
+      ],
+      "@wormhole/migrate": [
+        "../../packages/migrate/src/index.ts"
+      ],
+      "@wormhole/iec61131-upgrade": [
+        "../../packages/iec61131-upgrade/src/index.ts"
+      ]
+    }
+  },
+  "include": [
+    "src/**/*"
+  ]
+}
