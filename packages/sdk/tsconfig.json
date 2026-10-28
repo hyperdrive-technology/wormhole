@@ -14,8 +14,12 @@
     "baseUrl": ".",
     "paths": {
       "@wormhole/contract": ["../contract/src/index.ts"],
-      "@wormhole/migrate": ["../migrate/src/index.ts"]
+      "@wormhole/migrate": ["../migrate/src/index.ts"],
+      "@wormhole/sdk": ["./src/index.ts"],
+      "@wormhole/sdk/conformance": ["./src/conformance/index.ts"],
+      "@wormhole/sdk/conformance/vitest": ["./src/conformance/vitest.ts"],
+      "vitest": ["./node_modules/vitest"]
     }
   },
-  "include": ["src/**/*"]
+  "include": ["src/**/*", "../../templates/importer/src/**/*", "../../templates/importer/wormhole.importer.json"]
 }

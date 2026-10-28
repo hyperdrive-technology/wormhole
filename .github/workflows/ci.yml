@@ -41,3 +41,9 @@ jobs:
 
       - name: Build
         run: pnpm build
+
+      # Proves the out-of-repo path for importer authors: pack @wormhole/sdk as a tarball,
+      # install it into a copy of templates/importer outside the workspace, and run the
+      # template's typecheck, tests (including the conformance kit) and build.
+      - name: Importer template against packed SDK
+        run: scripts/verify-template.sh
