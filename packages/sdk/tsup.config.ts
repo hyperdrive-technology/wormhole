@@ -10,6 +10,27 @@ import { defineConfig } from 'tsup';
  */
 const bundled = ['@wormhole/contract', '@wormhole/migrate'];
 
+/*
+ * Installing straight from GitHub (no npm publish yet, Des 2026-10-29):
+ *
+ *   "@wormhole/sdk": "github:hyperdrive-technology/wormhole#<ref>&path:/packages/sdk"
+ *   "pnpm": { "onlyBuiltDependencies": ["@wormhole/sdk"] }
+ *
+ * What pnpm 10.33.2 actually does with that (verified 2026-10-29 in a scratch project; see
+ * scripts/verify-template.sh, which re-checks it in CI):
+ * - It fetches the whole repository, finds pnpm-workspace.yaml at its root and runs
+ *   `pnpm install` for the workspace there, so `workspace:*` dependencies resolve inside
+ *   the fetched copy.
+ * - It then runs this package's `prepare` script (`tsup`, i.e. this file) and packs
+ *   `packages/sdk` with the freshly built `dist/`.
+ * - pnpm 10 refuses to run a git-hosted dependency's build scripts unless the consumer
+ *   lists the package in `onlyBuiltDependencies` (ERR_PNPM_GIT_DEP_PREPARE_NOT_ALLOWED).
+ * - The consumer's lockfile pins the resolved commit, so `#main` or a tag is reproducible
+ *   once locked.
+ * Side effect: `prepare` also runs on every `pnpm install` inside this repository (pnpm
+ * runs workspace projects' `prepare`), which costs a couple of seconds.
+ */
+
 export default defineConfig({
   entry: {
     index: 'src/index.ts',
