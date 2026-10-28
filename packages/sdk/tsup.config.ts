@@ -21,8 +21,14 @@ const bundled = ['@wormhole/contract', '@wormhole/migrate'];
  * - It fetches the whole repository, finds pnpm-workspace.yaml at its root and runs
  *   `pnpm install` for the workspace there, so `workspace:*` dependencies resolve inside
  *   the fetched copy.
- * - It then runs this package's `prepare` script (`tsup`, i.e. this file) and packs
- *   `packages/sdk` with the freshly built `dist/`.
+ * - It then runs this package's `prepare` script and packs `packages/sdk` with the freshly
+ *   built `dist/`. `prepare` first builds @wormhole/contract and @wormhole/migrate
+ *   (`build:deps`), so bundling them goes through their built `dist/` and does not depend
+ *   on tsconfig `paths`: pnpm extracts git dependencies under its store, and when that path
+ *   contains a `node_modules` directory (GitHub Actions' pnpm/action-setup puts the store
+ *   under `setup-pnpm/node_modules/.bin/store`), esbuild ignores the tsconfig.json there,
+ *   so `paths` silently stop working ("Could not resolve @wormhole/contract", found in CI
+ *   2026-10-29). scripts/verify-template.sh uses such a store path on purpose.
  * - pnpm 10 refuses to run a git-hosted dependency's build scripts unless the consumer
  *   lists the package in `onlyBuiltDependencies` (ERR_PNPM_GIT_DEP_PREPARE_NOT_ALLOWED).
  * - The consumer's lockfile pins the resolved commit, so `#main` or a tag is reproducible

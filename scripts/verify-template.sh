@@ -64,8 +64,16 @@ node -e '
 # The work dir is outside the repository, so pnpm cannot pick up Wormhole's
 # pnpm-workspace.yaml; the project installs exactly as it would in its own repo.
 cd "$project"
-step 'pnpm install (fetches and builds @wormhole/sdk)' env CI=true pnpm install --no-frozen-lockfile
+# A store path containing `node_modules`, like GitHub Actions' pnpm setup, so the SDK's
+# prepare build is checked under the conditions that once broke it (see the comment in
+# packages/sdk/tsup.config.ts).
+step 'pnpm install (fetches and builds @wormhole/sdk)' env CI=true pnpm install --no-frozen-lockfile --store-dir "$work_dir/node_modules/.pnpm-store"
 [[ -f node_modules/@wormhole/sdk/dist/index.js ]] || { echo 'verify-template: @wormhole/sdk was installed without dist/' >&2; exit 1; }
+# contract and migrate must be bundled (JS and types): consumers cannot resolve them.
+if grep -rlE "from ['\"]@wormhole/(contract|migrate)['\"]" node_modules/@wormhole/sdk/dist; then
+  echo 'verify-template: @wormhole/sdk dist still imports @wormhole/contract or @wormhole/migrate' >&2
+  exit 1
+fi
 step 'typecheck' pnpm typecheck
 step 'test' pnpm test
 grep -E '^ +(Test Files|Tests) ' "$log_file" || true
