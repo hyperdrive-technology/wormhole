@@ -32,7 +32,8 @@
   "scripts": {
     "build": "tsup",
     "typecheck": "tsc --noEmit",
-    "test": "vitest run"
+    "test": "vitest run",
+    "prepare": "tsup"
   },
   "dependencies": {
     "ajv": "^8.20.0",
