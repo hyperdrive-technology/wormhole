@@ -344,11 +344,13 @@ describe('readZipTree: unsafe names', () => {
     await expectFatal(makeZip({ '..\\evil.txt': strToU8('x') }), SdkDiagnosticCode.INPUT_UNSAFE_PATH);
   });
 
-  // TODO: without the UTF-8 flag yauzl decodes byte 0x01 as CP437 "\u263a" (a printable
-  // smiley), so this fixture is not a control-character name. Set flag bit 11 (0x800) on
-  // the entry to keep 0x01 as U+0001, then un-skip. Not a source bug.
-  it.skip('rejects names with control characters', async () => {
-    await expectFatal(makeZip({ 'a\u0001b': strToU8('x') }), SdkDiagnosticCode.INPUT_UNSAFE_PATH);
+  // Without general-purpose flag bit 11 (UTF-8 names) yauzl decodes names as CP437, where
+  // byte 0x01 is the printable "\u263a". Set the flag so 0x01 stays U+0001.
+  it('rejects names with control characters', async () => {
+    const plain = makeZip({ 'a_b': strToU8('x') });
+    const utf8 = patchField(plain, 'a_b', 'flag', readField(plain, 'a_b', 'flag') | 0x800);
+    const zip = patchNameBytes(utf8, 'a_b', new Uint8Array([0x61, 0x01, 0x62]));
+    await expectFatal(zip, SdkDiagnosticCode.INPUT_UNSAFE_PATH);
   });
 
   it('rejects duplicate entry names as fatal', async () => {

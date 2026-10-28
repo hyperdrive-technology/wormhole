@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { strToU8, zipSync, type Zippable } from 'fflate';
+import { strToU8, Zip, ZipDeflate } from 'fflate';
 
 import { checkRelativePath } from './paths.js';
 import type {
@@ -42,16 +42,48 @@ export const ARCHIVE_DEFLATE_LEVEL = 6;
 /**
  * Zips entries in the given order with fixed timestamps and compression, so identical
  * entries always give byte-identical archives.
+ *
+ * Uses fflate's streaming `Zip` class rather than `zipSync`: `zipSync` takes a plain object
+ * and walks it with `for...in`, which reorders integer-like keys ("2", "10") ahead of the
+ * rest and turns a `__proto__` key into a prototype swap instead of an entry. The streaming
+ * API takes one entry at a time, so names are never object keys. With `ZipDeflate` the
+ * work happens synchronously inside `push()`, so the bytes are complete when `end()` returns.
  */
 export function zipDeterministic(entries: readonly ImporterArchiveEntry[]): Uint8Array {
-  const zippable: Zippable = {};
+  const seen = new Set<string>();
   for (const entry of entries) {
-    if (Object.prototype.hasOwnProperty.call(zippable, entry.path)) {
-      throw new ImporterArchiveError([`duplicate archive path ${entry.path}`]);
-    }
-    zippable[entry.path] = entry.bytes;
+    if (seen.has(entry.path)) throw new ImporterArchiveError([`duplicate archive path ${entry.path}`]);
+    seen.add(entry.path);
   }
-  return zipSync(zippable, { level: ARCHIVE_DEFLATE_LEVEL, mtime: fixedZipModificationTime() });
+  const chunks: Uint8Array[] = [];
+  let failure: Error | null = null;
+  let finished = false;
+  const zip = new Zip((error, chunk, final) => {
+    if (error) {
+      failure = error;
+      return;
+    }
+    chunks.push(chunk);
+    if (final) finished = true;
+  });
+  const mtime = fixedZipModificationTime();
+  for (const entry of entries) {
+    const file = new ZipDeflate(entry.path, { level: ARCHIVE_DEFLATE_LEVEL });
+    file.mtime = mtime;
+    zip.add(file);
+    file.push(entry.bytes, true);
+  }
+  zip.end();
+  if (failure) throw failure;
+  if (!finished) throw new Error('zip stream did not finish synchronously');
+  const total = chunks.reduce((sum, chunk) => sum + chunk.byteLength, 0);
+  const out = new Uint8Array(total);
+  let offset = 0;
+  for (const chunk of chunks) {
+    out.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return out;
 }
 
 /** Thrown by the archive builders; `problems` lists every reason, not just the first. */
@@ -185,6 +217,27 @@ function collectSection(
 }
 
 /**
+ * A path that is also a directory of another path (`assets/a` and `assets/a/b`) cannot be
+ * extracted anywhere: `assets/a` would have to be a file and a directory. Compared
+ * case-insensitively, like the exact-collision check.
+ */
+function fileDirectoryClashes(paths: readonly string[]): string[] {
+  const files = new Map(paths.map((path) => [path.toLowerCase(), path]));
+  const problems: string[] = [];
+  for (const path of paths) {
+    const segments = path.split('/');
+    for (let length = 1; length < segments.length; length += 1) {
+      const directory = segments.slice(0, length).join('/');
+      const clash = files.get(directory.toLowerCase());
+      if (clash !== undefined) {
+        problems.push(`path ${JSON.stringify(path)} needs ${JSON.stringify(directory)} to be a directory, but ${JSON.stringify(clash)} is a file`);
+      }
+    }
+  }
+  return problems;
+}
+
+/**
  * Builds a `hyperdrive.importer-result.v1` archive with any number of canonical sources,
  * preservation sidecars and assets. Archive bytes depend only on the input: entries are
  * sorted, timestamps fixed, compression level fixed.
@@ -206,6 +259,7 @@ export function buildImporterArchive(input: BuildImporterArchiveInput): BuiltImp
     problems,
   );
   const assets = collectSection('assets', input.assets, ASSET_PATH, seen, problems);
+  problems.push(...fileDirectoryClashes([...sources, ...preservation, ...assets].map((entry) => entry.path)));
   if (sources.length === 0 && problems.length === 0) {
     problems.push('at least one canonical source (sources/<path>.plc) is required');
   }

@@ -42,8 +42,16 @@ function archiveError(value: BuildImporterArchiveInput): ImporterArchiveError {
 }
 
 /** Entry names in central-directory order, as written. */
+/** Entry names in central-directory order (not via an object, whose key order is not insertion order). */
 function zipEntryNames(zip: Uint8Array): string[] {
-  return Object.keys(unzipSync(zip));
+  const names: string[] = [];
+  unzipSync(zip, {
+    filter: (file) => {
+      names.push(file.name);
+      return false;
+    },
+  });
+  return names;
 }
 
 const BINARY = new Uint8Array([0x00, 0xff, 0x80, 0x0d, 0x0a, 0x1a, 0xfe, 0x00, 0x7f]);
@@ -420,16 +428,22 @@ describe('buildImporterArchive: rejections', () => {
     expect(error.name).toBe('ImporterArchiveError');
   });
 
-  // An archive with both a file `assets/a` and a file `assets/a/b` cannot be extracted on
-  // any filesystem (`assets/a` would have to be a file and a directory). paths.ts says
-  // archives written by Wormhole "must extract safely on Linux, macOS and Windows", and
-  // buildImporterArchive promises to reject "colliding" paths, but only exact/case twins
-  // are detected today. BUG: remove `.fails` once file/directory prefix collisions are
-  // reported (also case-insensitively: `assets/A` + `assets/a/b`).
-  it.fails('rejects a file path that is also a directory prefix of another path', () => {
-    expect(() =>
-      buildImporterArchive(input({ assets: { 'assets/a': 'file', 'assets/a/b': 'nested' } })),
-    ).toThrow(ImporterArchiveError);
+  // Regression: an archive with both a file `assets/a` and a file `assets/a/b` cannot be
+  // extracted on any filesystem (`assets/a` would have to be a file and a directory).
+  it('rejects a file path that is also a directory prefix of another path', () => {
+    const error = archiveError(input({ assets: { 'assets/a': 'file', 'assets/a/b': 'nested' } }));
+    expect(error.problems).toEqual([expect.stringContaining('"assets/a" is a file')]);
+  });
+
+  it('rejects file/directory clashes case-insensitively and across sections', () => {
+    expect(archiveError(input({ assets: { 'assets/A': 'file', 'assets/a/b': 'nested' } })).problems).toHaveLength(1);
+    expect(
+      archiveError(input({ sources: { 'sources/x.plc': 'x', 'sources/x.plc/y.plc': 'y' } })).problems,
+    ).toHaveLength(1);
+  });
+
+  it('allows sibling paths that merely share a name prefix', () => {
+    expect(() => buildImporterArchive(input({ assets: { 'assets/a': 'file', 'assets/ab/c': 'x', 'assets/a.png': 'y' } }))).not.toThrow();
   });
 });
 
@@ -463,12 +477,9 @@ describe('zipDeterministic', () => {
     expect(Object.keys(unzipSync(zip))).toEqual([]);
   });
 
-  // zipDeterministic copies entries into a plain object and fflate's zipSync walks it with
-  // `for...in`. JavaScript enumerates integer-like keys ("2", "10") first in ascending
-  // numeric order, so such paths are written before the others, contradicting "zips
-  // entries in the given order". buildImporterArchive is not affected (its paths all
-  // start with a section prefix). BUG: remove `.fails` once fixed.
-  it.fails('keeps the given order for integer-like paths', () => {
+  // Regression: zipSync walked a plain object with `for...in`, which enumerates integer-like
+  // keys ("2", "10") first, so such paths were written out of order.
+  it('keeps the given order for integer-like paths', () => {
     const zip = zipDeterministic([
       { path: 'b.txt', bytes: new Uint8Array([1]) },
       { path: '10', bytes: new Uint8Array([2]) },
@@ -477,11 +488,9 @@ describe('zipDeterministic', () => {
     expect(zipEntryNames(zip)).toEqual(['b.txt', '10', '2']);
   });
 
-  // `zippable['__proto__'] = bytes` on a plain object replaces its prototype instead of
-  // adding an entry, so the file is dropped and fflate's `for...in` then walks the typed
-  // array's index keys as junk directories. `__proto__` passes checkRelativePath.
-  // BUG: remove `.fails` once fixed (e.g. `Object.create(null)` for the zippable).
-  it.fails('writes an entry named "__proto__"', () => {
+  // Regression: `zippable['__proto__'] = bytes` on a plain object swapped its prototype
+  // instead of adding an entry, so the file was dropped. `__proto__` passes checkRelativePath.
+  it('writes an entry named "__proto__"', () => {
     const zip = zipDeterministic([
       { path: 'a.txt', bytes: new Uint8Array([1]) },
       { path: '__proto__', bytes: new Uint8Array([2, 3]) },
