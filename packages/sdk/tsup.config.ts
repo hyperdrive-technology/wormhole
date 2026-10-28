@@ -28,7 +28,12 @@ const bundled = ['@wormhole/contract', '@wormhole/migrate'];
  *   contains a `node_modules` directory (GitHub Actions' pnpm/action-setup puts the store
  *   under `setup-pnpm/node_modules/.bin/store`), esbuild ignores the tsconfig.json there,
  *   so `paths` silently stop working ("Could not resolve @wormhole/contract", found in CI
- *   2026-10-29). scripts/verify-template.sh uses such a store path on purpose.
+ *   2026-10-29). The type bundler has the same blind spot from the other side: a module
+ *   that TypeScript resolves through `paths` to a file under `node_modules` is flagged
+ *   `isExternalLibraryImport`, and tsup's dts plugin then leaves `from '@wormhole/contract'`
+ *   in the .d.ts. So the build uses tsconfig.build.json, which drops `paths`.
+ *   scripts/verify-template.sh uses such a store path on purpose and fails if the installed
+ *   dist still imports @wormhole/contract or @wormhole/migrate.
  * - pnpm 10 refuses to run a git-hosted dependency's build scripts unless the consumer
  *   lists the package in `onlyBuiltDependencies` (ERR_PNPM_GIT_DEP_PREPARE_NOT_ALLOWED).
  * - The consumer's lockfile pins the resolved commit, so `#main` or a tag is reproducible
@@ -50,6 +55,9 @@ export default defineConfig({
   clean: true,
   splitting: true,
   noExternal: bundled,
+  // No tsconfig `paths` for the build: contract and migrate are bundled from their built
+  // dist/ (see `build:deps`), resolved like any dependency. See the comment above.
+  tsconfig: 'tsconfig.build.json',
   external: ['vitest'],
   dts: { resolve: bundled },
   // Ship the contract's JSON schemas too (`@wormhole/sdk/schemas/<name>.schema.json`), so an
