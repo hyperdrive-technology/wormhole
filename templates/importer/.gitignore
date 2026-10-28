@@ -3,5 +3,3 @@ dist/
 coverage/
 *.tsbuildinfo
 .DS_Store
-# vendor/*.tgz is deliberately NOT ignored: commit the @wormhole/sdk tarball you depend on
-# (see README.md, "Getting @wormhole/sdk").

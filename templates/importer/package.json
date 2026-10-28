@@ -15,7 +15,7 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@wormhole/sdk": "file:vendor/wormhole-sdk-0.1.0.tgz"
+    "@wormhole/sdk": "github:hyperdrive-technology/wormhole#sdk-v0.1.0&path:/packages/sdk"
   },
   "devDependencies": {
     "@types/node": "^24.13.2",
@@ -29,6 +29,9 @@
   },
   "packageManager": "pnpm@10.33.2",
   "pnpm": {
+    "onlyBuiltDependencies": [
+      "@wormhole/sdk"
+    ],
     "ignoredBuiltDependencies": [
       "esbuild"
     ]

@@ -27,8 +27,8 @@ jobs:
           node-version: 26
           cache: pnpm
 
-      # @wormhole/sdk comes from the committed vendor/*.tgz; the lockfile pins its integrity
-      # hash, so a swapped tarball fails here instead of silently changing the SDK.
+      # @wormhole/sdk comes from GitHub (see README "Getting @wormhole/sdk"); the lockfile
+      # pins the commit, and pnpm builds the SDK's dist/ during install.
       - name: Install
         run: pnpm install --frozen-lockfile
 

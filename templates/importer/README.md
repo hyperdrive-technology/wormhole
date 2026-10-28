@@ -37,7 +37,6 @@ Legacy octal initial values (`8#17`) are upgraded to hex through `ctx.migrate`.
 | `src/csv.ts`, `src/tags.ts` | Format-specific parsing and validation. Replace with yours. |
 | `src/*.test.ts` | Unit tests and the conformance suite (`conformance.test.ts`). |
 | `fixtures/` | Self-authored inputs used by the tests. |
-| `vendor/` | The `@wormhole/sdk` tarball you depend on (see below). |
 | `.github/workflows/ci.yml` | Install, typecheck, test (unit + conformance), build. |
 
 ## Make it yours
@@ -53,7 +52,7 @@ Legacy octal initial values (`8#17`) are upgraded to hex through `ctx.migrate`.
    - `src/index.ts`: `CAPABILITY_ID` (must match the manifest) and the `Code` diagnostic
      prefixes (`EXAMPLE_CSV_` → something unique to you).
 3. Replace `src/csv.ts`, `src/tags.ts`, the fixtures and the tests with your format.
-4. Get the SDK tarball (next section), then `pnpm install` and commit `pnpm-lock.yaml`.
+4. Pick the SDK ref (next section), then `pnpm install` and commit `pnpm-lock.yaml`.
 
 The importer contract in one paragraph: `detect()` must be cheap and deterministic (sniff
 a few header bytes with `files.head()`, never parse whole files) and must not throw;
@@ -63,53 +62,29 @@ at the start and inside long loops. The conformance suite checks all of this.
 
 ## Getting `@wormhole/sdk`
 
-`@wormhole/sdk` is not on npm yet. Until it is, depend on a **packed tarball**.
-
-### Vendored tarball (recommended)
-
-From a Wormhole checkout, at the release or commit you want:
-
-```sh
-pnpm install
-pnpm --filter @wormhole/sdk build
-pnpm --filter @wormhole/sdk pack --pack-destination <your-repo>/vendor
-```
-
-This writes `vendor/wormhole-sdk-<version>.tgz`. The SDK build bundles Wormhole's internal
-packages (`@wormhole/contract`, `@wormhole/migrate`), so the tarball is self-contained.
-Depend on it in `package.json`:
+`@wormhole/sdk` is not on npm. Depend on it **straight from GitHub**, as a subdirectory of
+the public Wormhole repository:
 
 ```json
-"dependencies": { "@wormhole/sdk": "file:vendor/wormhole-sdk-<version>.tgz" }
+"dependencies": {
+  "@wormhole/sdk": "github:hyperdrive-technology/wormhole#sdk-v0.1.0&path:/packages/sdk"
+},
+"pnpm": { "onlyBuiltDependencies": ["@wormhole/sdk"] }
 ```
 
-**Commit the tarball** (it is not git-ignored on purpose): CI and every clone then build
-against exactly the same SDK, and `pnpm-lock.yaml` records its integrity hash, so a
-changed tarball fails `pnpm install --frozen-lockfile` instead of silently changing the
-SDK. Upgrade deliberately: pack the new version, replace the file, update the
-`package.json` path, run `pnpm install`, run the tests, and commit all of it together.
+- `#sdk-v0.1.0` is a release tag. A commit SHA also works; `#main` works but moves.
+- `&path:/packages/sdk` selects the SDK inside the monorepo.
+- `onlyBuiltDependencies` is required. pnpm fetches the repository, installs its workspace,
+  and runs the SDK's `prepare` script to build `dist/`. pnpm 10 refuses to run a git-hosted
+  dependency's build scripts unless the package is allowlisted
+  (`ERR_PNPM_GIT_DEP_PREPARE_NOT_ALLOWED`).
+- `pnpm-lock.yaml` records the resolved commit. Commit it, so CI and every clone build
+  against exactly the same SDK.
+- Wormhole is public, so no token is needed, even when your importer repository is private.
 
-### Release asset URL
-
-If Wormhole publishes the tarball as a GitHub release asset, you can depend on its URL
-instead of committing it:
-
-```json
-"dependencies": { "@wormhole/sdk": "https://github.com/hyperdrive-technology/wormhole/releases/download/<tag>/wormhole-sdk-<version>.tgz" }
-```
-
-pnpm stores the tarball's integrity hash in `pnpm-lock.yaml` on first install; commit the
-lockfile so later installs verify it.
-
-### Why not a git dependency on the Wormhole repository?
-
-`"@wormhole/sdk": "github:hyperdrive-technology/wormhole#path:packages/sdk"` looks
-tempting but does not work: the SDK's `package.json` points at `dist/`, which is not
-committed (it only exists after a build), and its build needs sibling workspace packages
-referenced as `workspace:*`, which only resolve inside the Wormhole monorepo. A packed
-tarball has both problems solved: built `dist/`, internal packages bundled.
-
-When `@wormhole/sdk` is published to npm, switch to a normal semver range.
+To upgrade, change the ref, run `pnpm install`, run the tests, and commit `package.json`
+and `pnpm-lock.yaml` together. When `@wormhole/sdk` is published to npm, switch to a
+normal semver range.
 
 ## Scripts
 
@@ -120,9 +95,10 @@ pnpm test        # vitest: unit tests + conformance suite
 pnpm build       # tsup → dist/index.js (the manifest's "entry")
 ```
 
-`pnpm-workspace.yaml` is not needed. The `pnpm.ignoredBuiltDependencies` entry in
-`package.json` skips esbuild's optional install script (tsup works without it) and keeps
-pnpm from warning about it.
+`pnpm-workspace.yaml` is not needed. In `package.json`, `pnpm.onlyBuiltDependencies`
+lets pnpm build the GitHub-hosted SDK (see above). `pnpm.ignoredBuiltDependencies` skips
+esbuild's optional install script (tsup works without it) and keeps pnpm from warning
+about it.
 
 ## Conformance in CI
 
@@ -141,7 +117,7 @@ variants from them.
   repository: fixtures end up in CI logs, caches and every clone. Write small synthetic
   inputs that exercise the same constructs, as `fixtures/` does here.
 - Diagnostics and logs should name files and lines, not echo large chunks of input.
-- Vendoring the SDK tarball keeps CI free of tokens for private registries.
+- The SDK comes from the public Wormhole repository, so CI needs no registry or GitHub tokens.
 
 ## License
 
