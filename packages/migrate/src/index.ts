@@ -51,3 +51,4 @@ export {
   representedVariableRule,
   truncTypedRule,
 };
+export { matchAllInCode, replaceInCode, scanSourceSpans, type SourceSpan } from './lexical.js';

@@ -1,4 +1,5 @@
 import type { ImporterDiagnostic } from '@wormhole/contract';
+import { matchAllInCode, replaceInCode } from '../lexical.js';
 import { octalToHexLiteral } from '../migration-helpers.js';
 import {
   diagnostic,
@@ -19,7 +20,8 @@ export const octalLiteralRule: UpgradeRule = {
     let next = source;
 
     if (options.apply) {
-      next = source.replace(OCTAL_TOKEN, (match, _digits, offset) => {
+      // Only code is rewritten: `8#17` inside a comment, string literal or pragma is text.
+      next = replaceInCode(source, OCTAL_TOKEN, (match, _groups, offset) => {
         const converted = octalToHexLiteral(match);
         if (!converted) return match;
         changed = true;
@@ -36,8 +38,8 @@ export const octalLiteralRule: UpgradeRule = {
         return converted.hexLiteral;
       });
     } else {
-      for (const match of source.matchAll(OCTAL_TOKEN)) {
-        const converted = octalToHexLiteral(match[0]);
+      for (const match of matchAllInCode(source, OCTAL_TOKEN)) {
+        const converted = octalToHexLiteral(match.match);
         if (!converted) continue;
         diagnostics.push(
           diagnostic(
@@ -46,7 +48,7 @@ export const octalLiteralRule: UpgradeRule = {
             'warning',
             options,
             undefined,
-            lineNumberAt(source, match.index ?? 0),
+            lineNumberAt(source, match.offset),
           ),
         );
       }
