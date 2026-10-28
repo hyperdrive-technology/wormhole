@@ -10,13 +10,15 @@
     ".": {
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
-    }
+    },
+    "./wormhole.importer.json": "./wormhole.importer.json"
   },
   "bin": {
     "wormhole": "./dist/cli.js"
   },
   "files": [
-    "dist"
+    "dist",
+    "wormhole.importer.json"
   ],
   "scripts": {
     "build": "tsup src/index.ts src/cli.ts src/upgrade.ts --format esm --dts --clean",

@@ -26,7 +26,7 @@ import {
   type ImporterCapability,
   type ImporterManifest,
 } from './manifest.js';
-import { VirtualFileTree, type TreeLoadResult } from './tree.js';
+import type { TreeLoadResult, VirtualFileTree } from './tree.js';
 import { importResultShapeProblems, isPlainRecord } from './result.js';
 import { diagnosticsReportProblems, resultManifestProblems } from './validation.js';
 import { WORMHOLE_SDK_API_VERSION } from './version.js';
@@ -102,6 +102,10 @@ interface Registration {
 
 function compareCodeUnits(a: string, b: string): number {
   return a < b ? -1 : a > b ? 1 : 0;
+}
+
+function isTreeLoadResult(input: VirtualFileTree | TreeLoadResult): input is TreeLoadResult {
+  return typeof input === 'object' && input !== null && 'tree' in input && 'fatal' in input;
 }
 
 function byteLength(content: string | Uint8Array): number {
@@ -284,10 +288,11 @@ export class ImporterHost {
 
     const { manifest, importer } = registration;
     const capability = manifest.capabilities.find((item) => item.id === request.capabilityId) as ImporterCapability;
-    const loaded: TreeLoadResult =
-      request.input instanceof VirtualFileTree
-        ? { tree: request.input, diagnostics: [], fatal: false }
-        : request.input;
+    // Structural check rather than `instanceof`: a host and an importer repo may each load
+    // their own copy of @wormhole/sdk, and a tree from one copy must still be accepted.
+    const loaded: TreeLoadResult = isTreeLoadResult(request.input)
+      ? request.input
+      : { tree: request.input, diagnostics: [], fatal: false };
     const tree = loaded.tree;
     const startedAt = this.#clock();
     const logs: LogEntry[] = [];
