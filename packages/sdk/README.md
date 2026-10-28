@@ -15,3 +15,10 @@ Read [Writing an importer](../../docs/WRITING_AN_IMPORTER.md) and start from
 [`templates/importer/`](../../templates/importer/).
 
 Importer API version: `1.0.0` (`WORMHOLE_SDK_API_VERSION`), additive-only within v1.
+
+Install (not on npm; see [§8 of the guide](../../docs/WRITING_AN_IMPORTER.md#8-depending-on-the-sdk-github-not-npm)):
+
+```json
+"dependencies": { "@wormhole/sdk": "github:hyperdrive-technology/wormhole#sdk-v0.1.0&path:/packages/sdk" },
+"pnpm": { "onlyBuiltDependencies": ["@wormhole/sdk"] }
+```

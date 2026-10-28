@@ -240,27 +240,43 @@ Fixtures are known-good inputs that must import successfully.
 
 Run conformance in CI on every change. The template's workflow does.
 
-## 8. Using the SDK before it is on npm
+## 8. Depending on the SDK (GitHub, not npm)
 
-`@wormhole/sdk` is not published yet. Its build bundles `@wormhole/contract` and
-`@wormhole/migrate`, so one tarball is all an importer repo needs:
-
-```bash
-# in a Wormhole checkout
-pnpm install
-pnpm --filter @wormhole/sdk build
-pnpm --filter @wormhole/sdk pack --pack-destination ../wormhole-importer-acme/vendor
-```
+`@wormhole/sdk` is not published to npm (Des, 2026-10-29). Every importer, including private
+ones, depends on it straight from the public GitHub repository, as a pnpm git subdirectory
+dependency:
 
 ```json
-// your importer's package.json
-"dependencies": { "@wormhole/sdk": "file:vendor/wormhole-sdk-0.1.0.tgz" }
+{
+  "dependencies": {
+    "@wormhole/sdk": "github:hyperdrive-technology/wormhole#sdk-v0.1.0&path:/packages/sdk"
+  },
+  "pnpm": { "onlyBuiltDependencies": ["@wormhole/sdk"] }
+}
 ```
 
-Commit the tarball and update it deliberately; the lockfile pins its integrity. A plain git
-dependency on this monorepo does not work: the SDK's workspace dependencies and its unbuilt
-`dist/` only resolve inside the workspace. `scripts/verify-template.sh` exercises exactly this
-tarball path in Wormhole's CI.
+How it works with pnpm 10.33.2:
+
+1. pnpm downloads the repository at the ref (`#sdk-v0.1.0`; a commit SHA also works, and
+   `#main` works but moves) and selects `packages/sdk` (`&path:/packages/sdk`).
+2. It runs `pnpm install` for Wormhole's workspace inside that copy, so the SDK's internal
+   `workspace:*` dependencies resolve, then runs the SDK's `prepare` script, which builds
+   `dist/` and bundles `@wormhole/contract` and `@wormhole/migrate` into it.
+3. pnpm 10 refuses to run a git-hosted dependency's build scripts unless the consumer lists
+   it in `onlyBuiltDependencies` (`ERR_PNPM_GIT_DEP_PREPARE_NOT_ALLOWED`), so that entry is
+   required.
+4. `pnpm-lock.yaml` records the resolved commit. Commit it: CI and every clone then build
+   against exactly the same SDK.
+
+Wormhole is public, so private importer repos need no token to install it. Upgrade by
+changing the ref, running `pnpm install` and the tests, and committing `package.json` and
+`pnpm-lock.yaml` together.
+
+Release tags are named `sdk-v<package version>` and point at commits on `main`.
+[`templates/importer/`](../templates/importer/) uses exactly this pattern, and
+`scripts/verify-template.sh` exercises it in Wormhole's CI. That script copies the template
+out of the repository and installs the SDK from the commit under test (`git+file://` in
+place of `github:`) through the same fetch, workspace install and `prepare` build.
 
 ## 9. Versioning
 

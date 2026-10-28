@@ -24,7 +24,7 @@ The `wormhole upgrade` CLI, the service and the UI still call `@wormhole/iec6113
 | `@wormhole/migrate` | Shared `upgradeSource()` orchestration; owns the legacy construct translators (`src/legacy/`) |
 | `@wormhole/iec61131-upgrade` | First importer library + `wormhole upgrade` CLI |
 | `@wormhole/contract` | Types, path validation, deterministic zip builders and the canonical JSON schemas (`schemas/`: `hyperdrive.importer-*.v1` plus the `wormhole.importer.v1` manifest) |
-| `@wormhole/sdk` | Importer contract (`detect`/`import`), `wormhole.importer.v1` manifest validation, `VirtualFileTree` + zip/directory loaders, `ImporterHost` (limits, abort, result validation, archive), conformance kit. Its build bundles contract and migrate so it packs as one tarball. See [WRITING_AN_IMPORTER.md](WRITING_AN_IMPORTER.md). |
+| `@wormhole/sdk` | Importer contract (`detect`/`import`), `wormhole.importer.v1` manifest validation, `VirtualFileTree` + zip/directory loaders, `ImporterHost` (limits, abort, result validation, archive), conformance kit. Its `prepare` build bundles contract and migrate into `dist/`, so importers install it straight from GitHub (`github:hyperdrive-technology/wormhole#<tag>&path:/packages/sdk`). See [WRITING_AN_IMPORTER.md](WRITING_AN_IMPORTER.md). |
 | `@wormhole/ui` | TanStack Start app; server functions call the importer |
 | `@wormhole/service` | REST surface used by the Hyperdrive IDE's remote-importer client |
 

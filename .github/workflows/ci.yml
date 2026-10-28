@@ -18,6 +18,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          # scripts/verify-template.sh installs @wormhole/sdk from this checkout as a git
+          # dependency (git+file://...#<HEAD sha>), which needs HEAD's full history.
+          fetch-depth: 0
 
       - uses: pnpm/action-setup@v4
         # Version comes from package.json "packageManager" (pnpm@10.33.2).
@@ -42,8 +46,9 @@ jobs:
       - name: Build
         run: pnpm build
 
-      # Proves the out-of-repo path for importer authors: pack @wormhole/sdk as a tarball,
-      # install it into a copy of templates/importer outside the workspace, and run the
-      # template's typecheck, tests (including the conformance kit) and build.
+      # Proves the out-of-repo path for importer authors: a copy of templates/importer
+      # outside the workspace installs @wormhole/sdk as a pnpm git subdirectory dependency
+      # (the same mechanism as github:...#<tag>&path:/packages/sdk) and runs typecheck,
+      # tests (including the conformance kit) and build.
       - name: Importer template against packed SDK
         run: scripts/verify-template.sh
