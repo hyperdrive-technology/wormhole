@@ -1,0 +1,6 @@
+name,type,initial,comment,unit
+Motor_Run,BOOL,FALSE,Main conveyor motor running,
+Tank_Level,REAL,0.0,"Tank level, percent of span",%
+Batch_Name,STRING[32],'BATCH-001',"Operator-visible ""batch"" name",
+Fill_Time,TIME,T#30s,Fill timeout,s
+Alarm_Mask,WORD,16#00FF,,

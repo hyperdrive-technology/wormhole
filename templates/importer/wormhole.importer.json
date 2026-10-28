@@ -1,0 +1,30 @@
+{
+  "$schema": "./node_modules/@wormhole/sdk/dist/schemas/wormhole-importer.v1.schema.json",
+  "schemaVersion": "wormhole.importer.v1",
+  "id": "example.csv-tags-importer",
+  "name": "Example CSV tag-list importer (template)",
+  "description": "Template importer: converts CSV tag lists (name,type,initial,comment) into IEC 61131-3 VAR_GLOBAL declarations. Copy and rename it to start your own importer.",
+  "version": "0.1.0",
+  "license": "MIT",
+  "sdk": "^1.0.0",
+  "entry": "dist/index.js",
+  "capabilities": [
+    {
+      "id": "example.csv-tags",
+      "displayName": "CSV tag list",
+      "vendor": "Example (template)",
+      "vendorFamily": "example-csv",
+      "inputs": {
+        "fileExtensions": [".csv"],
+        "mediaTypes": ["text/csv"],
+        "containers": ["file", "directory", "zip"],
+        "maxBytes": 10485760
+      },
+      "outputs": ["sources", "diagnostics", "preservation"],
+      "coverageNotes": [
+        "Elementary types only (BOOL, integer, bit-string, REAL/LREAL, time/date and STRING types); no arrays, structs or FB instances.",
+        "Initial values must be single literals; legacy octal literals are upgraded to hex."
+      ]
+    }
+  ]
+}

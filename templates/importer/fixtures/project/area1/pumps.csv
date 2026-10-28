@@ -1,0 +1,3 @@
+name,type,initial,comment
+P101_Run,BOOL,FALSE,Pump 101 running
+P101_Speed,REAL,0.0,Pump 101 speed setpoint (%)

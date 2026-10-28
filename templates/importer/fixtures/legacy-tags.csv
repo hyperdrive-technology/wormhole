@@ -1,0 +1,4 @@
+Name,Type,Initial,Comment
+Mode_Word,WORD,8#17,Legacy octal initial value (upgraded to hex)
+Cycle_Count,DINT,0,
+Recipe_Step,INT,1,Current recipe step

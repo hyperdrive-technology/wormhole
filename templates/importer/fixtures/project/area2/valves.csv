@@ -1,0 +1,3 @@
+name,type,initial,comment
+V201_Open,BOOL,FALSE,Valve 201 open command
+V201_Position,INT,0,Valve 201 position feedback
