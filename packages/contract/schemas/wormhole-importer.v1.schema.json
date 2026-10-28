@@ -1,0 +1,168 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://hyperdrive.dev/schemas/wormhole-importer.v1.schema.json",
+  "title": "Wormhole importer manifest",
+  "description": "wormhole.importer.json: describes an importer package without running its code. Each capability maps onto one entry of hyperdrive.importer-capabilities.v1. Unknown fields are errors. @wormhole/sdk additionally checks that `version` is valid semver, that `sdk` is a valid semver range, that `entry` is a safe package-relative path, and that capability ids are unique.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "id", "name", "version", "license", "sdk", "capabilities"],
+  "properties": {
+    "$schema": {
+      "description": "Optional editor hint; ignored.",
+      "type": "string"
+    },
+    "schemaVersion": {
+      "const": "wormhole.importer.v1"
+    },
+    "id": {
+      "description": "Globally unique, dotted, lowercase package id with at least two segments, e.g. `acme.l5x`.",
+      "type": "string",
+      "maxLength": 128,
+      "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*(?:\\.[a-z0-9]+(?:-[a-z0-9]+)*)+$"
+    },
+    "name": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 200
+    },
+    "description": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 2000
+    },
+    "version": {
+      "description": "MAJOR.MINOR.PATCH semver. Written into results as importerVersion.",
+      "type": "string",
+      "maxLength": 100,
+      "pattern": "^(0|[1-9]\\d*)\\.(0|[1-9]\\d*)\\.(0|[1-9]\\d*)(?:-((?:0|[1-9]\\d*|\\d*[a-zA-Z-][0-9a-zA-Z-]*)(?:\\.(?:0|[1-9]\\d*|\\d*[a-zA-Z-][0-9a-zA-Z-]*))*))?(?:\\+([0-9a-zA-Z-]+(?:\\.[0-9a-zA-Z-]+)*))?$"
+    },
+    "license": {
+      "description": "SPDX licence expression, or LicenseRef-<name> for proprietary importers.",
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 200
+    },
+    "sdk": {
+      "description": "Semver range of the Wormhole importer SDK API this importer was written for, e.g. `^1.0.0`.",
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 100
+    },
+    "entry": {
+      "description": "Package-relative path of the entry module whose default export is the importer. No `..`, absolute paths or URLs.",
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 1024
+    },
+    "capabilities": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "$ref": "#/$defs/capability"
+      }
+    }
+  },
+  "$defs": {
+    "capability": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "displayName", "vendor", "vendorFamily", "inputs", "outputs"],
+      "properties": {
+        "id": {
+          "description": "Capability id; becomes `importerId` in hyperdrive.importer-* documents. Unique across every importer a host loads, so prefix it with your vendor, e.g. `acme.l5x`.",
+          "type": "string",
+          "maxLength": 128,
+          "pattern": "^[a-z0-9][a-z0-9._-]*$"
+        },
+        "displayName": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200
+        },
+        "vendor": {
+          "description": "Who makes the source system, e.g. `Rockwell Automation` or `IEC 61131-3 (vendor-neutral)`.",
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200
+        },
+        "vendorFamily": {
+          "description": "Machine id of the source family, e.g. `iec61131-legacy`.",
+          "type": "string",
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$"
+        },
+        "product": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200
+        },
+        "productVersions": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 100
+          }
+        },
+        "inputs": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["fileExtensions", "containers", "maxBytes"],
+          "properties": {
+            "fileExtensions": {
+              "description": "Lowercase extensions the capability reads; matching is case-insensitive.",
+              "type": "array",
+              "minItems": 1,
+              "uniqueItems": true,
+              "items": {
+                "type": "string",
+                "pattern": "^\\.[a-z0-9][a-z0-9._-]*$"
+              }
+            },
+            "mediaTypes": {
+              "type": "array",
+              "uniqueItems": true,
+              "items": {
+                "type": "string",
+                "pattern": "^[a-z0-9][a-z0-9!#$&^_.+-]*/[a-z0-9][a-z0-9!#$&^_.+-]*$"
+              }
+            },
+            "containers": {
+              "description": "How the input may arrive: a single file, a directory, or a zip archive.",
+              "type": "array",
+              "minItems": 1,
+              "uniqueItems": true,
+              "items": {
+                "enum": ["file", "directory", "zip"]
+              }
+            },
+            "maxBytes": {
+              "description": "Largest total input the capability accepts; maps to maxUploadBytes.",
+              "type": "integer",
+              "minimum": 1
+            }
+          }
+        },
+        "outputs": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "enum": ["sources", "diagnostics", "preservation", "assets"]
+          },
+          "allOf": [
+            { "contains": { "const": "sources" } },
+            { "contains": { "const": "diagnostics" } }
+          ]
+        },
+        "coverageNotes": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      }
+    }
+  }
+}

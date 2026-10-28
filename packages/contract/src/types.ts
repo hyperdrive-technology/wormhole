@@ -38,6 +38,31 @@ export interface ImporterResultManifest {
   preservation?: string[];
   diagnostics: string;
   unsupportedSemantics?: ImporterUnsupportedSemantic[];
+  /** Additive in v1 (2026-10-28): a short human summary of the import. */
+  summary?: ImporterResultSummary;
+}
+
+/** Human-readable outcome of an import, carried in the result manifest. */
+export interface ImporterResultSummary {
+  /** One or two sentences, e.g. "Upgraded 3 files; 1 IL body preserved." */
+  message: string;
+  /** Named non-negative integer counters, e.g. `{ "filesUpgraded": 3 }`. */
+  stats?: Record<string, number>;
+}
+
+/** One entry of a `hyperdrive.importer-capabilities.v1` document. */
+export interface ImporterCapabilityEntry {
+  id: string;
+  vendorFamily: string;
+  displayName: string;
+  fileExtensions: string[];
+  maxUploadBytes: number;
+  coverageNotes?: string[];
+}
+
+export interface ImporterCapabilitiesDocument {
+  schemaVersion: 'hyperdrive.importer-capabilities.v1';
+  importers: ImporterCapabilityEntry[];
 }
 
 export interface ImporterArchiveFile {
@@ -62,6 +87,40 @@ export interface BuildImporterResultArchiveInput {
 export interface ImporterResultArchive {
   manifest: ImporterResultManifest;
   files: ImporterArchiveFile[];
+  zipBytes: Uint8Array;
+}
+
+/** Text is written as UTF-8; bytes are written as-is. */
+export type ArchiveContent = string | Uint8Array;
+
+/**
+ * Input of {@link buildImporterArchive}: a multi-source result. Every key is a full archive
+ * path: `sources/<path>.plc`, `preservation/<path>`, `assets/<path>`.
+ */
+export interface BuildImporterArchiveInput {
+  manifest: {
+    importerId: string;
+    importerVersion: string;
+    vendorFamily: string;
+    sourceFingerprint: string;
+    unsupportedSemantics?: ImporterUnsupportedSemantic[];
+    summary?: ImporterResultSummary;
+  };
+  sources: Readonly<Record<string, string>>;
+  diagnostics: ImporterDiagnosticsReport;
+  preservation?: Readonly<Record<string, ArchiveContent>>;
+  assets?: Readonly<Record<string, ArchiveContent>>;
+}
+
+export interface ImporterArchiveEntry {
+  path: string;
+  bytes: Uint8Array;
+}
+
+export interface BuiltImporterArchive {
+  manifest: ImporterResultManifest;
+  /** Entries in archive order: manifest.json, diagnostics.json, then sources, preservation, assets (each sorted). */
+  entries: ImporterArchiveEntry[];
   zipBytes: Uint8Array;
 }
 

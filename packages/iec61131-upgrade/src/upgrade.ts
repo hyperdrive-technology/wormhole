@@ -6,7 +6,9 @@ import {
   buildImporterResultArchive,
   fingerprintSource,
   IEC61131_ED4_UPGRADE_CAPABILITY,
+  type ImporterDiagnostic,
   type ImporterDiagnosticsReport,
+  type ImporterUnsupportedSemantic,
 } from '@wormhole/contract';
 import { upgradeSource, type UpgradeOptions, type UpgradeResult } from '@wormhole/migrate';
 
@@ -50,6 +52,19 @@ export async function upgradeIec61131File(
   return { ...result, fileName };
 }
 
+/** Warnings and errors become the result manifest's `unsupportedSemantics`. */
+export function unsupportedSemanticsFrom(
+  diagnostics: readonly ImporterDiagnostic[],
+): ImporterUnsupportedSemantic[] {
+  return diagnostics
+    .filter((item) => item.severity === 'warning' || item.severity === 'error')
+    .map((item) => ({
+      code: item.code,
+      message: item.message,
+      severity: item.severity,
+    }));
+}
+
 export function buildIec61131ImporterArchive(
   fileName: string,
   result: Iec61131UpgradeResult,
@@ -61,13 +76,7 @@ export function buildIec61131ImporterArchive(
       importerVersion: IMPORTER_VERSION,
       vendorFamily: VENDOR_FAMILY,
       sourceFingerprint: fingerprintSource(sourceContent),
-      unsupportedSemantics: result.diagnostics
-        .filter((item) => item.severity === 'warning' || item.severity === 'error')
-        .map((item) => ({
-          code: item.code,
-          message: item.message,
-          severity: item.severity,
-        })),
+      unsupportedSemantics: unsupportedSemanticsFrom(result.diagnostics),
     },
     sourcePath: fileName,
     sourceContent: result.source,

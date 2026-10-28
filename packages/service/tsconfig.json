@@ -20,6 +20,9 @@
       ],
       "@wormhole/iec61131-upgrade": [
         "../../packages/iec61131-upgrade/src/index.ts"
+      ],
+      "@wormhole/sdk": [
+        "../../packages/sdk/src/index.ts"
       ]
     }
   },
