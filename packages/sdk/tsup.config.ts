@@ -1,4 +1,5 @@
 import { cp } from 'node:fs/promises';
+import { fileURLToPath } from 'node:url';
 
 import { defineConfig } from 'tsup';
 
@@ -16,31 +17,30 @@ const bundled = ['@wormhole/contract', '@wormhole/migrate'];
  *   "@wormhole/sdk": "github:hyperdrive-technology/wormhole#<ref>&path:/packages/sdk"
  *   "pnpm": { "onlyBuiltDependencies": ["@wormhole/sdk"] }
  *
- * What pnpm 10.33.2 actually does with that (verified 2026-10-29 in a scratch project; see
- * scripts/verify-template.sh, which re-checks it in CI):
+ * What pnpm 10.33.2 actually does with that (verified 2026-10-29; scripts/verify-template.sh
+ * re-checks it in CI):
  * - It fetches the whole repository, finds pnpm-workspace.yaml at its root and runs
  *   `pnpm install` for the workspace there, so `workspace:*` dependencies resolve inside
  *   the fetched copy.
- * - It then runs this package's `prepare` script and packs `packages/sdk` with the freshly
- *   built `dist/`. `prepare` first builds @wormhole/contract and @wormhole/migrate
- *   (`build:deps`), so bundling them goes through their built `dist/` and does not depend
- *   on tsconfig `paths`: pnpm extracts git dependencies under its store, and when that path
- *   contains a `node_modules` directory (GitHub Actions' pnpm/action-setup puts the store
- *   under `setup-pnpm/node_modules/.bin/store`), esbuild ignores the tsconfig.json there,
- *   so `paths` silently stop working ("Could not resolve @wormhole/contract", found in CI
- *   2026-10-29). The type bundler has the same blind spot from the other side: a module
- *   that TypeScript resolves through `paths` to a file under `node_modules` is flagged
- *   `isExternalLibraryImport`, and tsup's dts plugin then leaves `from '@wormhole/contract'`
- *   in the .d.ts. So the build uses tsconfig.build.json, which drops `paths`.
- *   scripts/verify-template.sh uses such a store path on purpose and fails if the installed
- *   dist still imports @wormhole/contract or @wormhole/migrate.
+ * - It then runs this package's `prepare` script (`pnpm run build`) and packs
+ *   `packages/sdk` with the freshly built `dist/`.
  * - pnpm 10 refuses to run a git-hosted dependency's build scripts unless the consumer
  *   lists the package in `onlyBuiltDependencies` (ERR_PNPM_GIT_DEP_PREPARE_NOT_ALLOWED).
- * - The consumer's lockfile pins the resolved commit, so `#main` or a tag is reproducible
- *   once locked.
- * Side effect: `prepare` also runs on every `pnpm install` inside this repository (pnpm
- * runs workspace projects' `prepare`), which costs a couple of seconds.
+ * - The consumer's lockfile pins the resolved commit.
+ *
+ * Gotcha (found in CI 2026-10-29): pnpm builds git dependencies inside its store. On GitHub
+ * Actions that store is below a `node_modules` directory, and esbuild ignores tsconfig.json
+ * files there, so tsconfig `paths` stop working ("Could not resolve @wormhole/contract").
+ * The explicit esbuild `alias` below does not depend on tsconfig. Types have a similar
+ * problem, handled in rollup.dts.config.mjs. scripts/verify-template.sh builds under such a
+ * store path on purpose.
+ *
+ * Side effect: `prepare` also runs on every `pnpm install` inside this repository.
  */
+const sourceOf = {
+  '@wormhole/contract': fileURLToPath(new URL('../contract/src/index.ts', import.meta.url)),
+  '@wormhole/migrate': fileURLToPath(new URL('../migrate/src/index.ts', import.meta.url)),
+};
 
 export default defineConfig({
   entry: {
@@ -55,11 +55,12 @@ export default defineConfig({
   clean: true,
   splitting: true,
   noExternal: bundled,
-  // No tsconfig `paths` for the build: contract and migrate are bundled from their built
-  // dist/ (see `build:deps`), resolved like any dependency. See the comment above.
-  tsconfig: 'tsconfig.build.json',
+  esbuildOptions(options) {
+    options.alias = { ...options.alias, ...sourceOf };
+  },
   external: ['vitest'],
-  dts: { resolve: bundled },
+  // Types are bundled by rollup.dts.config.mjs (see there for why not tsup's dts).
+  dts: false,
   // Ship the contract's JSON schemas too (`@wormhole/sdk/schemas/<name>.schema.json`), so an
   // importer repo can point its manifest's `$schema` or its own validators at them.
   onSuccess: async () => {

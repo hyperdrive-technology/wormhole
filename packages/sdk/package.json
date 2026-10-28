@@ -30,11 +30,10 @@
     "README.md"
   ],
   "scripts": {
-    "build": "tsup",
+    "build": "tsup && rollup --config rollup.dts.config.mjs --silent",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "prepare": "pnpm run build:deps && tsup",
-    "build:deps": "pnpm --filter @wormhole/contract --filter @wormhole/migrate run build"
+    "prepare": "pnpm run build"
   },
   "dependencies": {
     "ajv": "^8.20.0",
@@ -56,6 +55,8 @@
     "@types/yauzl": "^3.4.0",
     "@wormhole/contract": "workspace:*",
     "@wormhole/migrate": "workspace:*",
+    "rollup": "^4.62.2",
+    "rollup-plugin-dts": "^6.5.1",
     "tsup": "^8.5.1",
     "typescript": "^5.9.3",
     "vitest": "^3.2.6"
