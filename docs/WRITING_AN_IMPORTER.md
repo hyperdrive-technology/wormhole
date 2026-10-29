@@ -126,6 +126,11 @@ interface ImportResult {
 - Every key is a full archive path, checked by the same rules as input paths plus Windows
   portability (no `<>:"|?*`, no trailing dot or space, no `CON`/`NUL`/`COM1`…, no two paths
   that differ only by case).
+- **Never drop input that holds logic.** If a source file can't be written (its output path
+  collides or isn't portable, or a sidecar would be overwritten), return no sources so the
+  host fails the run with `NO_SOURCES`. Don't skip the file and report success. Empty and
+  binary files may be skipped with a diagnostic. The template and the IEC 61131 importer
+  both follow this rule (`filesLost` / `sourcesLost` in `summary.stats`).
 - `input.files` is a `VirtualFileTree`: a read-only, in-memory map of relative path → bytes
   (`paths()`, `read()`, `head()`, `readText()`, `pathsWithExtension()`). Importers never get
   filesystem access. Reads return copies.
