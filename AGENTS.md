@@ -22,4 +22,5 @@ cd wormhole && pnpm install
 pnpm dev                    # wormhole-ui on :3001
 pnpm test                   # all package tests
 pnpm test:compile-gate      # upgraded fixtures → Hyperdrive compiler (needs ../core or HYPERDRIVE_CORE_DIR; skips otherwise)
+HYPERDRIVE_CORE_DIR=../core pnpm test:schema-sync   # contract schemas identical to core's docs/schemas/
 ```

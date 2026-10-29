@@ -52,6 +52,8 @@ pnpm typecheck
 
 `pnpm test:compile-gate` also compiles the upgraded fixtures with the Hyperdrive compiler. It needs a Hyperdrive core checkout at `../core` or at `HYPERDRIVE_CORE_DIR`, and skips otherwise.
 
+`HYPERDRIVE_CORE_DIR=../core pnpm test:schema-sync` checks that the `hyperdrive.importer-*.v1` schemas in `packages/contract/schemas/` are identical to core's `docs/schemas/` copies. It runs only when `HYPERDRIVE_CORE_DIR` is set.
+
 ## First importer
 
 - **Importer id:** `wormhole.iec61131-upgrade` ([`wormhole.importer.json`](packages/iec61131-upgrade/wormhole.importer.json)); **capability id:** `iec61131-ed4-upgrade`

@@ -12,15 +12,19 @@ import {
   type ImportResult,
   type ImportOptions,
 } from '@wormhole/sdk';
-import { zipSync, strToU8 } from 'fflate';
+import Ajv2020 from 'ajv/dist/2020.js';
+import { strFromU8, strToU8, unzipSync, zipSync } from 'fflate';
 import { describe, expect, it } from 'vitest';
 
 import defaultExport, { iec61131UpgradeImporter, iec61131UpgradeManifest } from './index.js';
 import { IMPORTER_ID, IMPORTER_VERSION, upgradeIec61131Source } from './upgrade.js';
 
 const fixturesDir = join(dirname(fileURLToPath(import.meta.url)), '../../../fixtures/legacy');
+const contractSchemasDir = join(dirname(fileURLToPath(import.meta.url)), '../../contract/schemas');
 const tierA = readFileSync(join(fixturesDir, 'tier-a-legacy.plc'), 'utf8');
 const il = readFileSync(join(fixturesDir, 'il-legacy.st'), 'utf8');
+/** Same POU name as `il`, different logic, so a dropped sidecar is detectable. */
+const ilOther = il.replace('LD Start', 'LDN Start');
 
 function treeOf(files: Record<string, string | Uint8Array>) {
   const loaded = VirtualFileTree.fromEntries(Object.entries(files).map(([path, content]) => ({ path, content })));
@@ -150,10 +154,88 @@ describe('iec61131 importer import()', () => {
     expect(codes(result).filter((code) => code === 'WORMHOLE_IEC_OUTPUT_COLLISION')).toHaveLength(2);
   });
 
-  it('keeps the first of two colliding preservation sidecars and reports the second', async () => {
-    const result = await importFiles({ 'x/il-legacy.st': il, 'y/il-legacy.st': il });
-    expect(Object.keys(result.preservation ?? {})).toHaveLength(1);
-    expect(codes(result)).toContain('WORMHOLE_IEC_PRESERVATION_COLLISION');
+  // PR #1 review P1: x/main.st and y/main.st used to share preservation/il/main-<POU>.il.txt,
+  // so the second file's IL was replaced by a placeholder and then dropped.
+  it('preserves both IL bodies when files in different folders share a base name and POU name', async () => {
+    const result = await importFiles({ 'x/il-legacy.st': il, 'y/il-legacy.st': ilOther });
+    expect(result.preservation).toEqual({
+      'preservation/il/x/il-legacy-Legacy.il.txt': expect.stringContaining('LD Start'),
+      'preservation/il/y/il-legacy-Legacy.il.txt': expect.stringContaining('LDN Start'),
+    });
+    expect(result.preservation?.['preservation/il/x/il-legacy-Legacy.il.txt']).not.toContain('LDN');
+    expect(codes(result)).not.toContain('WORMHOLE_IEC_PRESERVATION_COLLISION');
+    expect(result.summary.stats).toMatchObject({ filesUpgraded: 2, preservationSidecars: 2 });
+  });
+
+  // PR #1 review P1: case-only differences used to pass the importer's case-sensitive check
+  // and then fail the whole run in buildImporterArchive's case-insensitive one.
+  it('imports files whose paths differ only by case in different folders', async () => {
+    const result = await importFiles({ 'x/Main.st': il, 'y/main.st': ilOther });
+    expect(Object.keys(result.preservation ?? {}).sort()).toEqual([
+      'preservation/il/x/Main-Legacy.il.txt',
+      'preservation/il/y/main-Legacy.il.txt',
+    ]);
+    expect(codes(result)).not.toContain('WORMHOLE_IEC_PRESERVATION_COLLISION');
+  });
+
+  it('keeps both bodies of a POU declared twice in one file (wormhole#4)', async () => {
+    const result = await importFiles({ 'dup.st': `${il}${ilOther}` });
+    expect(Object.keys(result.preservation ?? {})).toEqual(['preservation/il/dup-Legacy.il.txt', 'preservation/il/dup-Legacy-2.il.txt']);
+    expect(codes(result)).toContain('WORMHOLE_IL_DUPLICATE_POU');
+  });
+
+  describe('when a sidecar would still be lost', () => {
+    /** A context whose migrate toolkit returns fixed preservation paths, to force collisions. */
+    async function importWithSidecars(
+      files: Record<string, string>,
+      sidecarsFor: (fileName: string) => Record<string, string>,
+    ): Promise<ImportResult> {
+      const handle = createImportContext();
+      const real = handle.context.migrate;
+      const context = {
+        ...handle.context,
+        migrate: {
+          ...real,
+          upgradeSource: (content: string, options: Parameters<typeof real.upgradeSource>[1]) => ({
+            ...real.upgradeSource(content, options),
+            preservation: sidecarsFor(options.fileName),
+          }),
+        },
+      };
+      try {
+        return await iec61131UpgradeImporter.import({ files: treeOf(files), capabilityId: IMPORTER_ID, options: {} }, context);
+      } finally {
+        handle.dispose();
+      }
+    }
+
+    it.each([
+      ['an exact', (fileName: string) => ({ 'preservation/il/shared.il.txt': fileName })],
+      ['a case-only', (fileName: string) => ({ [fileName.startsWith('x') ? 'preservation/il/Shared.il.txt' : 'preservation/il/shared.il.txt']: fileName })],
+    ])('fails instead of emitting a lossy archive on %s sidecar collision', async (_, sidecarsFor) => {
+      const result = await importWithSidecars({ 'x/a.st': il, 'y/b.st': il }, sidecarsFor);
+      expect(result.sources).toEqual({});
+      expect(result.preservation).toBeUndefined();
+      expect(codes(result)).toContain('WORMHOLE_IEC_PRESERVATION_COLLISION');
+      expect(result.diagnostics.find((diagnostic) => diagnostic.code === 'WORMHOLE_IEC_PRESERVATION_COLLISION')?.severity).toBe('error');
+      expect(result.summary.message).toMatch(/not imported/);
+    });
+
+    it('fails instead of emitting a lossy archive when a sidecar path is unusable', async () => {
+      const result = await importWithSidecars({ 'a.st': il }, () => ({ 'preservation/il/a:b.il.txt': 'x' }));
+      expect(result.sources).toEqual({});
+      expect(codes(result)).toContain('WORMHOLE_IEC_UNPORTABLE_PATH');
+    });
+
+    it('fails through ImporterHost with NO_SOURCES rather than succeeding', async () => {
+      const result = await importWithSidecars({ 'x/a.st': il, 'y/b.st': il }, () => ({ 'preservation/il/shared.il.txt': 'x' }));
+      const host = new ImporterHost();
+      host.register({ ...iec61131UpgradeImporter, import: () => result });
+      const outcome = await host.run({ capabilityId: IMPORTER_ID, input: treeOf({ 'x/a.st': il }) });
+      expect(outcome.status).toBe('failed');
+      expect(outcome.failure?.code).toBe('NO_SOURCES');
+      expect(outcome.archive).toBeUndefined();
+    });
   });
 
   it('skips inputs whose output path would not be portable', async () => {
@@ -186,8 +268,31 @@ describe('iec61131 importer through ImporterHost', () => {
       importerVersion: IMPORTER_VERSION,
       vendorFamily: 'iec61131-legacy',
       canonicalSources: ['sources/project/lib/tier-a.plc', 'sources/project/main.plc'],
-      preservation: ['preservation/il/main-Legacy.il.txt'],
+      preservation: ['preservation/il/project/main-Legacy.il.txt'],
     });
+  });
+
+  it('succeeds for case-variant paths and emits one sidecar per file', async () => {
+    const outcome = await host.run({ capabilityId: IMPORTER_ID, input: treeOf({ 'x/Main.st': il, 'y/main.st': ilOther }) });
+    expect(outcome.failure).toBeUndefined();
+    expect(outcome.status).toBe('succeeded');
+    expect(outcome.archive?.manifest.preservation).toEqual(['preservation/il/x/Main-Legacy.il.txt', 'preservation/il/y/main-Legacy.il.txt']);
+    const unzipped = unzipSync(outcome.archive!.zipBytes);
+    expect(strFromU8(unzipped['preservation/il/x/Main-Legacy.il.txt']!)).toContain('LD Start');
+    expect(strFromU8(unzipped['preservation/il/y/main-Legacy.il.txt']!)).toContain('LDN Start');
+  });
+
+  // wormhole#2: the emitted manifest (including `summary`) must validate against the
+  // canonical result schema file, read from disk so this checks the published JSON.
+  it('emits a manifest.json that validates against hyperdrive-importer-result.v1.schema.json', async () => {
+    const outcome = await host.run({ capabilityId: IMPORTER_ID, input: treeOf({ 'main.st': il }) });
+    expect(outcome.status).toBe('succeeded');
+    const manifest = JSON.parse(strFromU8(unzipSync(outcome.archive!.zipBytes)['manifest.json']!)) as Record<string, unknown>;
+    expect(manifest.summary).toMatchObject({ message: expect.stringContaining('Upgraded 1 of 1'), stats: { preservationSidecars: 1 } });
+    const schema = JSON.parse(readFileSync(join(contractSchemasDir, 'hyperdrive-importer-result.v1.schema.json'), 'utf8')) as Record<string, unknown>;
+    const validate = new Ajv2020({ allErrors: true, strict: true, strictTypes: false }).compile(schema);
+    expect(validate(manifest), JSON.stringify(validate.errors)).toBe(true);
+    expect(schema.additionalProperties).toBe(false);
   });
 
   it('fails cleanly with NO_SOURCES for garbage', async () => {

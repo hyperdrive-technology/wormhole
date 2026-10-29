@@ -507,6 +507,32 @@ describe('ImporterHost.run: misbehaving importers', () => {
     expectFailure(outcome, 'LIMIT_EXCEEDED', 'WORMHOLE_RUN_OUTPUT_TOO_LARGE');
     expect(outcome.stats.outputBytes).toBeGreaterThan(4_096);
   });
+
+  // wormhole#3: summary and unsupportedSemantics land in manifest.json, so they count too.
+  it('counts a large summary message toward maxOutputBytes', async () => {
+    const outcome = await runToy({ summary: { message: 'x'.repeat(5_000) } }, { limits: { maxOutputBytes: 4_096 } });
+    expectFailure(outcome, 'LIMIT_EXCEEDED', 'WORMHOLE_RUN_OUTPUT_TOO_LARGE');
+    expect(outcome.stats.outputBytes).toBeGreaterThan(5_000);
+  });
+
+  it('counts summary stats toward maxOutputBytes', async () => {
+    const stats = Object.fromEntries(Array.from({ length: 300 }, (_, index) => [`stat_${index}`, index]));
+    const outcome = await runToy({ summary: { message: 'ok', stats } }, { limits: { maxOutputBytes: 4_096 } });
+    expectFailure(outcome, 'LIMIT_EXCEEDED', 'WORMHOLE_RUN_OUTPUT_TOO_LARGE');
+  });
+
+  it('counts unsupportedSemantics toward maxOutputBytes', async () => {
+    const unsupportedSemantics = Array.from({ length: 100 }, (_, index) => ({ code: `TOY_GAP_${index}`, message: 'y'.repeat(50) }));
+    const outcome = await runToy({ unsupportedSemantics }, { limits: { maxOutputBytes: 4_096 } });
+    expectFailure(outcome, 'LIMIT_EXCEEDED', 'WORMHOLE_RUN_OUTPUT_TOO_LARGE');
+  });
+
+  it('reports outputBytes that cover the manifest metadata on success', async () => {
+    const small = await runToy({});
+    const withMetadata = await runToy({ summary: { message: 'z'.repeat(1_000) } });
+    expect(withMetadata.status).toBe('succeeded');
+    expect(withMetadata.stats.outputBytes - small.stats.outputBytes).toBeGreaterThanOrEqual(1_000 - 'ok'.length);
+  });
 });
 
 describe('ImporterHost.run: misuse throws', () => {

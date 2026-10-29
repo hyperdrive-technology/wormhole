@@ -112,8 +112,17 @@ function byteLength(content: string | Uint8Array): number {
   return typeof content === 'string' ? Buffer.byteLength(content, 'utf8') : content.byteLength;
 }
 
-function outputBytes(result: ImportResult, diagnostics: ImporterDiagnosticsReport): number {
+/**
+ * Bytes the archive will carry, before compression: every output file, the diagnostics
+ * report, and the importer-supplied manifest metadata (`summary`, `unsupportedSemantics`),
+ * which are serialised into `manifest.json` and so are just as unbounded as file content.
+ */
+function outputBytes(result: ImportResult, diagnostics: ImporterDiagnosticsReport, summary: ImportSummary): number {
   let total = Buffer.byteLength(JSON.stringify(diagnostics), 'utf8');
+  total += Buffer.byteLength(JSON.stringify(summary), 'utf8');
+  if (result.unsupportedSemantics !== undefined) {
+    total += Buffer.byteLength(JSON.stringify(result.unsupportedSemantics), 'utf8');
+  }
   for (const record of [result.sources, result.preservation ?? {}, result.assets ?? {}]) {
     for (const [path, content] of Object.entries(record)) {
       total += Buffer.byteLength(path, 'utf8') + byteLength(content);
@@ -451,7 +460,7 @@ export class ImporterHost {
       );
     }
 
-    const totalOutput = outputBytes(result, report);
+    const totalOutput = outputBytes(result, report, summary);
     if (totalOutput > limits.maxOutputBytes) {
       return fail(
         'LIMIT_EXCEEDED',

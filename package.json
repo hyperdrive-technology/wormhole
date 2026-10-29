@@ -9,7 +9,8 @@
     "test": "pnpm -r run test",
     "typecheck": "pnpm -r run typecheck",
     "generate:core-langium": "pnpm --dir \"${HYPERDRIVE_CORE_DIR:-../core}/src/typescript/packages/hyperdrive-ui\" run langium:generate",
-    "test:compile-gate": "pnpm run generate:core-langium && pnpm --filter @wormhole/iec61131-upgrade run test:compile-gate"
+    "test:compile-gate": "pnpm run generate:core-langium && pnpm --filter @wormhole/iec61131-upgrade run test:compile-gate",
+    "test:schema-sync": "pnpm --filter @wormhole/contract exec vitest run src/schema-sync.test.ts"
   },
   "license": "MIT",
   "engines": {

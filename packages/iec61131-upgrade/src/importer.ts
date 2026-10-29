@@ -67,6 +67,9 @@ export const iec61131UpgradeImporter = defineImporter({
     const sources: Record<string, string> = {};
     const preservation: Record<string, string> = {};
     const usedOutputPaths = new Set<string>();
+    /** Lower-cased sidecar path -> the sidecar and the input file that produced it. */
+    const sidecarOwners = new Map<string, { path: string; source: string }>();
+    let lostSidecars = 0;
     let apply = true;
     if (options.apply !== undefined) {
       if (typeof options.apply === 'boolean') apply = options.apply;
@@ -129,17 +132,51 @@ export const iec61131UpgradeImporter = defineImporter({
       sources[outputPath] = upgraded.source;
       if (upgraded.changed) changedFiles += 1;
       diagnostics.push(...upgraded.diagnostics);
+      // By the time a sidecar exists, the IL body in `upgraded.source` has (with apply) been
+      // replaced by a placeholder, so the sidecar is the only copy of that logic. Dropping one
+      // would emit a "succeeded" archive that silently loses a program, so any sidecar we
+      // cannot keep fails the whole import below. Sidecar names come from the full relative
+      // path (see ilSidecarPath in @wormhole/migrate), so for inputs that passed the output
+      // collision check above this is defensive; it still guards custom rule sets.
       for (const [sidecarPath, content] of Object.entries(upgraded.preservation)) {
         const sidecar = checkRelativePath(sidecarPath, { portable: true });
+        // Case-insensitive, matching buildImporterArchive: `A.txt` and `a.txt` overwrite each
+        // other when the archive is extracted on Windows or default macOS filesystems.
+        const collisionKey = sidecarPath.toLowerCase();
+        const previous = sidecarOwners.get(collisionKey);
         if (!sidecar.ok || sidecar.path !== sidecarPath) {
-          diagnostics.push(diagnostic('WORMHOLE_IEC_UNPORTABLE_PATH', 'error', `Preservation sidecar for ${path} has an unusable path and was dropped.`, path));
-        } else if (Object.prototype.hasOwnProperty.call(preservation, sidecarPath)) {
-          diagnostics.push(diagnostic('WORMHOLE_IEC_PRESERVATION_COLLISION', 'error', `${sidecarPath} is produced by more than one file; only the first was kept.`, path));
+          lostSidecars += 1;
+          diagnostics.push(diagnostic('WORMHOLE_IEC_UNPORTABLE_PATH', 'error', `Preservation sidecar ${JSON.stringify(sidecarPath)} for ${path} has an unusable path; the import was stopped so its IL is not lost.`, path));
+        } else if (previous !== undefined) {
+          lostSidecars += 1;
+          diagnostics.push(diagnostic('WORMHOLE_IEC_PRESERVATION_COLLISION', 'error', `${sidecarPath} (from ${path}) collides with ${previous.path} (from ${previous.source}); the import was stopped so neither file's IL is lost.`, path));
         } else {
+          sidecarOwners.set(collisionKey, { path: sidecarPath, source: path });
           preservation[sidecarPath] = content;
         }
       }
       ctx.logger.debug('upgraded file', { path, changed: upgraded.changed, diagnostics: upgraded.diagnostics.length });
+    }
+
+    if (lostSidecars > 0) {
+      // Returning no sources makes ImporterHost fail the run (NO_SOURCES) with these
+      // diagnostics, instead of building an archive with placeholders but no IL.
+      return {
+        sources: {},
+        diagnostics,
+        unsupportedSemantics: unsupportedSemanticsFrom(diagnostics),
+        summary: {
+          message: `Project not imported: ${lostSidecars} IL preservation sidecar(s) could not be written, so their program logic would have been lost.`,
+          stats: {
+            filesFound: paths.length,
+            filesUpgraded: 0,
+            filesChanged: 0,
+            filesSkipped: paths.length,
+            preservationSidecars: 0,
+            preservationSidecarsLost: lostSidecars,
+          },
+        },
+      };
     }
 
     const upgradedFiles = Object.keys(sources).length;

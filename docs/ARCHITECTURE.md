@@ -32,7 +32,7 @@ The `wormhole upgrade` CLI, the service and the UI still call `@wormhole/iec6113
 
 1. **Tier A (auto):** octal → hex, `TRUNC` → typed, BCD → `HD_BCD.*`
 2. **Tier B (structural):** nameless `AT`, direct-address alias declarations
-3. **Tier C (preservation):** IL bodies → ST placeholder + `preservation/il/` sidecar
+3. **Tier C (preservation):** IL bodies → ST placeholder + `preservation/il/` sidecar (`preservation/il/<source path without extension>-<POU>[-<n>].il.txt`, named from the full relative path so same-named files in different folders never share one; a repeated POU name in one file gets `-2`, `-3`…). If a sidecar still cannot be written, the IEC 61131 importer fails the import rather than emit placeholders without their IL
 4. **Tier D (diagnostic):** VAR_ACCESS, VAR_GLOBAL, FB `WITH`, graphical deprecations
 
 Normative reference: IEC 61131-3 Edition 4. Hyperdrive's compiler keeps legacy constructs out of its core language, so Wormhole rewrites them on the way in.

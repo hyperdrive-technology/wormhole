@@ -30,6 +30,7 @@ export const ilPreservationRule: UpgradeRule = {
     const preservation: Record<string, string> = {};
     let changed = false;
     let next = source;
+    const pouOccurrences = new Map<string, number>();
 
     next = source.replace(POU_BODY, (full, bodyPrefix: string, endKeyword: string, offset) => {
       const ilBody = extractIlBody(bodyPrefix);
@@ -37,7 +38,27 @@ export const ilPreservationRule: UpgradeRule = {
 
       const pouName = pouNameFromHeader(bodyPrefix);
       const sidecar = ilPreservationSidecar(ilBody, pouName);
-      const preservationPath = `preservation/il/${sanitizeFileStem(options.fileName)}-${pouName}.il.txt`;
+      // IEC identifiers are case-insensitive, so `Dup` and `DUP` in one file are the same POU
+      // declared twice (invalid, but legacy input does it). Number the repeats instead of
+      // letting the second body overwrite the first.
+      const pouKey = pouName.toLowerCase();
+      const occurrence = (pouOccurrences.get(pouKey) ?? 0) + 1;
+      pouOccurrences.set(pouKey, occurrence);
+      const preservationPath = ilSidecarPath(options.fileName, pouName, occurrence);
+      const startLine = lineNumberAt(source, offset);
+
+      if (occurrence > 1) {
+        diagnostics.push(
+          diagnostic(
+            'WORMHOLE_IL_DUPLICATE_POU',
+            `${pouName} is declared more than once in this file; this copy's IL was preserved at ${preservationPath}`,
+            'warning',
+            options,
+            'IEC 61131-3 POU names are case-insensitive and must be unique; rename or remove the duplicate.',
+            startLine,
+          ),
+        );
+      }
 
       preservation[preservationPath] = sidecar.preservationBlob;
 
@@ -48,7 +69,7 @@ export const ilPreservationRule: UpgradeRule = {
           'warning',
           options,
           'Replace ST placeholder with migrated logic before canonical export.',
-          lineNumberAt(source, offset),
+          startLine,
         ),
       );
 
@@ -68,8 +89,25 @@ export const ilPreservationRule: UpgradeRule = {
   },
 };
 
-function sanitizeFileStem(fileName: string): string {
-  return fileName.replace(/^.*[/\\]/, '').replace(/\.(plc|st)$/i, '') || 'source';
+/**
+ * The source's relative path without its `.plc`/`.st` extension, with `/` separators and
+ * no empty, `.` or `..` segments: `x\\main.st` -> `x/main`. Using the whole path (not just
+ * the base name) is what keeps `x/main.st` and `y/main.st` from sharing a sidecar, the same
+ * way `sources/x/main.plc` and `sources/y/main.plc` stay apart.
+ */
+export function ilSidecarStem(fileName: string): string {
+  const segments = fileName.split(/[/\\]+/).filter((segment) => segment !== '' && segment !== '.' && segment !== '..');
+  return segments.join('/').replace(/\.(plc|st)$/i, '') || 'source';
+}
+
+/**
+ * `preservation/il/<stem>-<POU>[-<n>].il.txt`. Collision-free for distinct (case-insensitive)
+ * source stems: POU names are identifiers (no `-`, never starting with a digit), so the last
+ * `-<identifier>` and the optional `-<n>` repeat counter are unambiguous.
+ */
+export function ilSidecarPath(fileName: string, pouName: string, occurrence = 1): string {
+  const repeat = occurrence > 1 ? `-${occurrence}` : '';
+  return `preservation/il/${ilSidecarStem(fileName)}-${pouName}${repeat}.il.txt`;
 }
 
 function lineNumberAt(source: string, index: number): number {
