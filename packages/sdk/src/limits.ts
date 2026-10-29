@@ -8,7 +8,7 @@ export interface ImportLimits {
   maxInputBytes: number;
   /** Number of input files (directories are not counted). */
   maxInputFiles: number;
-  /** Total bytes of sources, sidecars, assets and diagnostics the importer may produce. */
+  /** Uncompressed bytes of every archive entry as written (manifest, diagnostics, sources, sidecars, assets) plus the outcome summary. */
   maxOutputBytes: number;
   /** Wall-clock budget for `import()`, in milliseconds. */
   maxWallTimeMs: number;

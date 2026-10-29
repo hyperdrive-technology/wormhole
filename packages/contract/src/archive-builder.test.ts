@@ -5,7 +5,9 @@ import {
   buildImporterArchive,
   buildImporterResultArchive,
   ImporterArchiveError,
+  planImporterArchive,
   zipDeterministic,
+  zipPlannedArchive,
 } from './archive.js';
 import type { BuildImporterArchiveInput, BuildImporterResultArchiveInput } from './types.js';
 
@@ -55,6 +57,43 @@ function zipEntryNames(zip: Uint8Array): string[] {
 }
 
 const BINARY = new Uint8Array([0x00, 0xff, 0x80, 0x0d, 0x0a, 0x1a, 0xfe, 0x00, 0x7f]);
+
+// Hosts measure output from the plan before compressing (wormhole#11), so the plan must
+// hold exactly the bytes the archive does.
+describe('planImporterArchive', () => {
+  const rich = () =>
+    input({
+      manifest: { ...MANIFEST, unsupportedSemantics: [{ code: 'ACME_GAP', message: 'gap', severity: 'warning' }] },
+      sources: { 'sources/b.plc': 'b', 'sources/a.plc': '\u00e9' },
+      preservation: { 'preservation/raw.bin': BINARY },
+      assets: { 'assets/icon.svg': '<svg/>' },
+    });
+
+  it('holds the same manifest and entry bytes as buildImporterArchive', () => {
+    const plan = planImporterArchive(rich());
+    const built = buildImporterArchive(rich());
+    expect(plan.manifest).toEqual(built.manifest);
+    expect(plan.entries).toEqual(built.entries);
+    expect(zipPlannedArchive(plan).zipBytes).toEqual(built.zipBytes);
+  });
+
+  it('serialises manifest.json and diagnostics.json pretty-printed with a trailing newline', () => {
+    const plan = planImporterArchive(rich());
+    expect(strFromU8(plan.entries[0]!.bytes)).toBe(`${JSON.stringify(plan.manifest, null, 2)}\n`);
+    expect(strFromU8(plan.entries[1]!.bytes)).toBe(`${JSON.stringify(DIAGNOSTICS, null, 2)}\n`);
+  });
+
+  it('has entry bytes whose sum is every uncompressed byte in the zip', () => {
+    const plan = planImporterArchive(rich());
+    const unzipped = unzipSync(zipPlannedArchive(plan).zipBytes);
+    const total = (sizes: number[]) => sizes.reduce((sum, size) => sum + size, 0);
+    expect(total(plan.entries.map((entry) => entry.bytes.byteLength))).toBe(total(Object.values(unzipped).map((bytes) => bytes.byteLength)));
+  });
+
+  it('throws ImporterArchiveError for invalid paths, like buildImporterArchive', () => {
+    expect(() => planImporterArchive(input({ sources: { '../evil.plc': 'x' } }))).toThrow(ImporterArchiveError);
+  });
+});
 
 describe('buildImporterArchive: layout and manifest', () => {
   it('lists sorted sources, preservation and assets in the manifest', () => {

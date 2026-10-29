@@ -117,10 +117,14 @@ export interface ImporterArchiveEntry {
   bytes: Uint8Array;
 }
 
-export interface BuiltImporterArchive {
+/** An archive's manifest and serialised entries, before compression. */
+export interface PlannedImporterArchive {
   manifest: ImporterResultManifest;
   /** Entries in archive order: manifest.json, diagnostics.json, then sources, preservation, assets (each sorted). */
   entries: ImporterArchiveEntry[];
+}
+
+export interface BuiltImporterArchive extends PlannedImporterArchive {
   zipBytes: Uint8Array;
 }
 

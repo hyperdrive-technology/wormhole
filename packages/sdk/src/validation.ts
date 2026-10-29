@@ -54,6 +54,21 @@ export function resultManifestProblems(value: unknown): string[] {
   return schemaProblems(SCHEMAS.result, value);
 }
 
+const UNSUPPORTED_SEMANTICS_SCHEMA: JsonSchemaDocument = {
+  $ref: `${String(importerResultSchema.$id)}#/properties/unsupportedSemantics`,
+};
+
+/**
+ * Schema problems in an `unsupportedSemantics` list, checked against the result schema's own
+ * `properties.unsupportedSemantics` (via `$ref`, so there is no second copy of the rules).
+ * Run it before anything serialises the list: Ajv rejects cycles and BigInts on their type
+ * without recursing into them, whereas `JSON.stringify` throws (wormhole#7).
+ */
+export function unsupportedSemanticsProblems(value: unknown): string[] {
+  compiled(SCHEMAS.result); // registers the result schema under its $id for the $ref below
+  return schemaProblems(UNSUPPORTED_SEMANTICS_SCHEMA, value);
+}
+
 export function diagnosticsReportProblems(value: unknown): string[] {
   return schemaProblems(SCHEMAS.diagnostics, value);
 }
