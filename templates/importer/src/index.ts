@@ -157,6 +157,12 @@ export const csvTagsImporter = defineImporter({
     const declared = new Map<string, { path: string; line: number }>();
     const upgradeRules = literalUpgradeRules(ctx);
     const stats = { csvFiles: 0, filesConverted: 0, filesSkipped: 0, tags: 0, rowsRejected: 0, valuesUpgraded: 0 };
+    /**
+     * Files we cannot write anywhere (no usable or a colliding output path). Skipping one would
+     * return a "succeeded" archive that silently misses its tags, so any lost file fails the
+     * whole import below. Copy this rule: an importer must never drop input it cannot place.
+     */
+    let filesLost = 0;
 
     const paths = files.pathsWithExtension('.csv');
     stats.csvFiles = paths.length;
@@ -170,10 +176,14 @@ export const csvTagsImporter = defineImporter({
         diagnostics.push(diagnostic(code, severity, message, path, line));
         stats.filesSkipped += 1;
       };
+      const lose = (code: string, message: string): void => {
+        diagnostics.push(diagnostic(code, 'error', `${message}; the import was stopped so its tags are not lost.`, path));
+        filesLost += 1;
+      };
 
       const stem = path.replace(/\.csv$/i, '');
       if (stem.length === 0 || stem.endsWith('/')) {
-        skip(Code.UNPORTABLE_PATH, 'error', `${path} has no file name before ".csv", so it has no output name; it was skipped.`);
+        lose(Code.UNPORTABLE_PATH, `${path} has no file name before ".csv", so it has no output name`);
         continue;
       }
       const outputPath = `sources/${stem}.plc`;
@@ -182,12 +192,12 @@ export const csvTagsImporter = defineImporter({
         .map((candidate) => checkRelativePath(candidate, { portable: true }))
         .find((checked) => !checked.ok);
       if (unportable && !unportable.ok) {
-        skip(Code.UNPORTABLE_PATH, 'error', `${path} cannot be converted: its output path ${unportable.reason}.`);
+        lose(Code.UNPORTABLE_PATH, `${path} cannot be converted: its output path ${unportable.reason}`);
         continue;
       }
       // `a.csv` and `A.CSV` would produce the same file on Windows and macOS.
       if (usedOutputPaths.has(outputPath.toLowerCase())) {
-        skip(Code.OUTPUT_COLLISION, 'error', `${path} would overwrite another file's output ${outputPath} and was skipped.`);
+        lose(Code.OUTPUT_COLLISION, `${path} would overwrite another file's output ${outputPath}; rename one of them`);
         continue;
       }
       usedOutputPaths.add(outputPath.toLowerCase());
@@ -308,6 +318,18 @@ export const csvTagsImporter = defineImporter({
       stats.filesConverted += 1;
       stats.tags += declarations.length;
       ctx.logger.debug('converted tag list', { path, tags: declarations.length, rejected: rejected.length });
+    }
+
+    if (filesLost > 0) {
+      // No sources makes ImporterHost fail the run (NO_SOURCES) with these diagnostics.
+      return {
+        sources: {},
+        diagnostics,
+        summary: {
+          message: `Project not imported: ${filesLost} CSV file(s) could not be written, so their tags would have been lost.`,
+          stats: { ...stats, filesConverted: 0, tags: 0, filesLost },
+        },
+      };
     }
 
     return {

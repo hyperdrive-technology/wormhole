@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { createImportContext, VirtualFileTree, type ImportResult } from '@wormhole/sdk';
+import { createImportContext, ImporterHost, VirtualFileTree, type ImportResult } from '@wormhole/sdk';
 import { describe, expect, it } from 'vitest';
 
 import importer, { CAPABILITY_ID, Code } from './index.js';
@@ -295,10 +295,27 @@ describe('import', () => {
     expect(codes(result)).toEqual([Code.DUPLICATE_COLUMN]);
   });
 
-  it('refuses outputs that would collide or have no name', async () => {
+  // A skipped file would leave a "succeeded" archive missing its tags (GPT review on
+  // wormhole#1), so an output that collides or has no usable name fails the whole import.
+  it('fails instead of dropping outputs that would collide or have no name', async () => {
     const result = await runImport({ 'a.csv': `${HEADER}A,BOOL,,\n`, 'A.CSV': `${HEADER}B,BOOL,,\n`, 'x/.csv': `${HEADER}C,BOOL,,\n` });
-    expect(Object.keys(result.sources)).toEqual(['sources/A.plc']);
+    expect(result.sources).toEqual({});
     expect(codes(result).sort()).toEqual([Code.OUTPUT_COLLISION, Code.UNPORTABLE_PATH].sort());
+    expect(result.summary.message).toMatch(/^Project not imported/);
+    expect(result.summary.stats).toMatchObject({ filesLost: 2, filesConverted: 0 });
+  });
+
+  it.each([
+    ['a case-only collision', { 'A.CSV': `${HEADER}Pump,BOOL,,\n`, 'a.csv': `${HEADER}Valve,BOOL,,\n` }],
+    ['an unportable output path', { 'ok.csv': `${HEADER}Pump,BOOL,,\n`, 'bad:name.csv': `${HEADER}Valve,BOOL,,\n` }],
+  ])('fails through ImporterHost with NO_SOURCES on %s', async (_, files) => {
+    const host = new ImporterHost();
+    host.register(importer);
+    const loaded = VirtualFileTree.fromEntries(Object.entries(files).map(([path, content]) => ({ path, content })));
+    const outcome = await host.run({ capabilityId: CAPABILITY_ID, input: loaded.tree });
+    expect(outcome.status).toBe('failed');
+    expect(outcome.failure?.code).toBe('NO_SOURCES');
+    expect(outcome.archive).toBeUndefined();
   });
 
   it('is deterministic', async () => {
