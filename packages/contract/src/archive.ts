@@ -11,6 +11,7 @@ import type {
   ImporterArchiveFile,
   ImporterResultArchive,
   ImporterResultManifest,
+  PlannedImporterArchive,
 } from './types.js';
 
 export function fingerprintSource(content: string): string {
@@ -240,13 +241,14 @@ function fileDirectoryClashes(paths: readonly string[]): string[] {
 }
 
 /**
- * Builds a `hyperdrive.importer-result.v1` archive with any number of canonical sources,
- * preservation sidecars and assets. Archive bytes depend only on the input: entries are
- * sorted, timestamps fixed, compression level fixed.
+ * Everything {@link buildImporterArchive} does except compressing: validates every path,
+ * builds the manifest and serialises each entry to the exact bytes the archive will hold.
+ * Hosts use it to measure output (`sum(entries[].bytes.byteLength)`) and enforce limits
+ * before paying for deflate.
  *
  * Throws {@link ImporterArchiveError} listing every invalid or colliding path.
  */
-export function buildImporterArchive(input: BuildImporterArchiveInput): BuiltImporterArchive {
+export function planImporterArchive(input: BuildImporterArchiveInput): PlannedImporterArchive {
   const problems: string[] = [];
   const seen = new Map<string, string>([
     ['manifest.json', 'manifest.json'],
@@ -290,7 +292,23 @@ export function buildImporterArchive(input: BuildImporterArchiveInput): BuiltImp
     ...assets,
   ];
 
-  return { manifest, entries, zipBytes: zipDeterministic(entries) };
+  return { manifest, entries };
+}
+
+/**
+ * Builds a `hyperdrive.importer-result.v1` archive with any number of canonical sources,
+ * preservation sidecars and assets. Archive bytes depend only on the input: entries are
+ * sorted, timestamps fixed, compression level fixed.
+ *
+ * Throws {@link ImporterArchiveError} listing every invalid or colliding path.
+ */
+export function buildImporterArchive(input: BuildImporterArchiveInput): BuiltImporterArchive {
+  return zipPlannedArchive(planImporterArchive(input));
+}
+
+/** Compresses a {@link planImporterArchive} result; together they equal {@link buildImporterArchive}. */
+export function zipPlannedArchive(plan: PlannedImporterArchive): BuiltImporterArchive {
+  return { manifest: plan.manifest, entries: plan.entries, zipBytes: zipDeterministic(plan.entries) };
 }
 
 export * from './types.js';

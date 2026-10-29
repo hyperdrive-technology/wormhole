@@ -389,6 +389,32 @@ describe('readZipTree: limits and zip bombs', () => {
     await expectFatal(zip, SdkDiagnosticCode.INPUT_TOO_MANY_FILES, { limits: { maxInputFiles: 2 } });
   });
 
+  // wormhole#6: unsupported (encrypted / unknown-compression) entries count as files too,
+  // otherwise an archive of skipped entries gets past the limit and piles up diagnostics.
+  it('counts unsupported entries towards maxInputFiles', async () => {
+    let zip = makeZip({ a: strToU8('1'), b: strToU8('2'), c: strToU8('3') });
+    for (const name of ['a', 'b', 'c']) zip = patchField(zip, name, 'method', 99);
+    const result = await expectFatal(zip, SdkDiagnosticCode.INPUT_TOO_MANY_FILES, { limits: { maxInputFiles: 1 } });
+    // The first entry is within the limit and was skipped; the second trips it.
+    expect(result.diagnostics.filter((d) => d.code === SdkDiagnosticCode.INPUT_ZIP_ENTRY_UNSUPPORTED)).toHaveLength(1);
+  });
+
+  it('counts mixed supported and unsupported entries towards maxInputFiles', async () => {
+    const zip = makeZip({ 'plain.txt': strToU8('plain'), 'weird.bin': strToU8('weird') });
+    const patched = patchField(zip, 'weird.bin', 'method', 99);
+    await expectFatal(patched, SdkDiagnosticCode.INPUT_TOO_MANY_FILES, { limits: { maxInputFiles: 1 } });
+    const encrypted = patchField(zip, 'plain.txt', 'flag', readField(zip, 'plain.txt', 'flag') | 0x1);
+    await expectFatal(encrypted, SdkDiagnosticCode.INPUT_TOO_MANY_FILES, { limits: { maxInputFiles: 1 } });
+  });
+
+  it('accepts mixed supported and unsupported entries exactly at maxInputFiles', async () => {
+    const zip = makeZip({ 'plain.txt': strToU8('plain'), 'weird.bin': strToU8('weird') });
+    const result = await read(patchField(zip, 'weird.bin', 'method', 99), { limits: { maxInputFiles: 2 } });
+    expect(result.fatal).toBe(false);
+    expect(result.tree.paths()).toEqual(['plain.txt']);
+    expect(result.diagnostics.map((d) => d.code)).toEqual([SdkDiagnosticCode.INPUT_ZIP_ENTRY_UNSUPPORTED]);
+  });
+
   it('does not count directory entries towards maxInputFiles', async () => {
     const result = await read(makeZip({ d: { e: { 'f.txt': strToU8('x') } } }), { limits: { maxInputFiles: 1 } });
     expect(result.fatal).toBe(false);

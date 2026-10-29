@@ -1,10 +1,13 @@
 import {
-  buildImporterArchive,
   ImporterArchiveError,
+  planImporterArchive,
+  zipPlannedArchive,
   type BuiltImporterArchive,
   type ImporterCapabilitiesDocument,
   type ImporterDiagnostic,
   type ImporterDiagnosticsReport,
+  type ImporterUnsupportedSemantic,
+  type PlannedImporterArchive,
 } from '@wormhole/contract';
 
 import { createImportContext } from './context.js';
@@ -28,7 +31,7 @@ import {
 } from './manifest.js';
 import type { TreeLoadResult, VirtualFileTree } from './tree.js';
 import { importResultShapeProblems, isPlainRecord } from './result.js';
-import { diagnosticsReportProblems, resultManifestProblems } from './validation.js';
+import { diagnosticsReportProblems, resultManifestProblems, unsupportedSemanticsProblems } from './validation.js';
 import { WORMHOLE_SDK_API_VERSION } from './version.js';
 
 export interface ImporterHostOptions {
@@ -108,27 +111,24 @@ function isTreeLoadResult(input: VirtualFileTree | TreeLoadResult): input is Tre
   return typeof input === 'object' && input !== null && 'tree' in input && 'fatal' in input;
 }
 
-function byteLength(content: string | Uint8Array): number {
-  return typeof content === 'string' ? Buffer.byteLength(content, 'utf8') : content.byteLength;
+/**
+ * Bytes the run produces, before compression: every archive entry exactly as serialised
+ * (pretty-printed `manifest.json` and `diagnostics.json`, sources, preservation, assets),
+ * plus the `summary` returned on the outcome. Measured from the planned archive rather than
+ * estimated, so the limit matches what is written (wormhole#3, wormhole#11).
+ */
+function outputBytes(plan: PlannedImporterArchive, summary: ImportSummary): number {
+  let total = Buffer.byteLength(JSON.stringify(summary), 'utf8');
+  for (const entry of plan.entries) total += entry.bytes.byteLength;
+  return total;
 }
 
 /**
- * Bytes the run produces, before compression: every output file, the diagnostics report,
- * `unsupportedSemantics` (serialised into `manifest.json`) and the `summary` returned on the
- * outcome. All are importer-supplied and so just as unbounded as file content.
+ * A plain copy of already-validated `unsupportedSemantics`, so serialisation never touches
+ * the importer's objects again (a getter could answer differently the second time).
  */
-function outputBytes(result: ImportResult, diagnostics: ImporterDiagnosticsReport, summary: ImportSummary): number {
-  let total = Buffer.byteLength(JSON.stringify(diagnostics), 'utf8');
-  total += Buffer.byteLength(JSON.stringify(summary), 'utf8');
-  if (result.unsupportedSemantics !== undefined) {
-    total += Buffer.byteLength(JSON.stringify(result.unsupportedSemantics), 'utf8');
-  }
-  for (const record of [result.sources, result.preservation ?? {}, result.assets ?? {}]) {
-    for (const [path, content] of Object.entries(record)) {
-      total += Buffer.byteLength(path, 'utf8') + byteLength(content);
-    }
-  }
-  return total;
+function copyUnsupportedSemantics(list: readonly ImporterUnsupportedSemantic[]): ImporterUnsupportedSemantic[] {
+  return list.map(({ code, message, severity }) => ({ code, message, ...(severity !== undefined ? { severity } : {}) }));
 }
 
 function validateOptions(options: unknown): string[] {
@@ -445,6 +445,20 @@ export class ImporterHost {
     const diagnosticProblems = diagnosticsReportProblems(report);
     if (diagnosticProblems.length > 0) return invalid(diagnosticProblems.map((problem) => `diagnostics ${problem}`));
 
+    // Validated before anything serialises it: a cycle or BigInt here used to make
+    // JSON.stringify throw out of run() (wormhole#7).
+    let unsupportedSemantics: ImporterUnsupportedSemantic[] | undefined;
+    if (result.unsupportedSemantics !== undefined) {
+      let problems: string[];
+      try {
+        problems = unsupportedSemanticsProblems(result.unsupportedSemantics);
+        if (problems.length === 0) unsupportedSemantics = copyUnsupportedSemantics(result.unsupportedSemantics);
+      } catch (error) {
+        problems = [`could not be inspected: ${describeThrown(error)}`];
+      }
+      if (problems.length > 0) return invalid(problems.map((problem) => `unsupportedSemantics ${problem}`));
+    }
+
     const summary: ImportSummary = {
       message: result.summary.message,
       ...(result.summary.stats !== undefined ? { stats: { ...result.summary.stats } } : {}),
@@ -460,28 +474,17 @@ export class ImporterHost {
       );
     }
 
-    const totalOutput = outputBytes(result, report, summary);
-    if (totalOutput > limits.maxOutputBytes) {
-      return fail(
-        'LIMIT_EXCEEDED',
-        [
-          ...report.diagnostics,
-          sdkDiagnostic(SdkDiagnosticCode.RUN_OUTPUT_TOO_LARGE, 'error', `Importer output is ${totalOutput} bytes; the limit is ${limits.maxOutputBytes}.`),
-        ],
-        { summary, outputBytes: totalOutput },
-      );
-    }
-
-    // 4. Build the deterministic archive and re-check it against the result schema.
-    let archive: BuiltImporterArchive;
+    // 4. Serialise every archive entry (no compression yet) and re-check the manifest
+    //    against the result schema.
+    let plan: PlannedImporterArchive;
     try {
-      archive = buildImporterArchive({
+      plan = planImporterArchive({
         manifest: {
           importerId: capability.id,
           importerVersion: manifest.version,
           vendorFamily: capability.vendorFamily,
           sourceFingerprint: tree.fingerprint(),
-          ...(result.unsupportedSemantics ? { unsupportedSemantics: result.unsupportedSemantics } : {}),
+          ...(unsupportedSemantics ? { unsupportedSemantics } : {}),
           // `summary` stays on the run outcome only until core's result schema accepts it (wormhole#2).
         },
         sources: result.sources,
@@ -495,9 +498,29 @@ export class ImporterHost {
       }
       return invalid([`archive could not be built: ${describeThrown(error)}`]);
     }
-    const manifestProblems = resultManifestProblems(archive.manifest);
+    const manifestProblems = resultManifestProblems(plan.manifest);
     if (manifestProblems.length > 0) return invalid(manifestProblems.map((problem) => `result manifest ${problem}`));
 
+    // 5. Enforce maxOutputBytes on the exact serialised size, before paying for deflate.
+    const totalOutput = outputBytes(plan, summary);
+    if (totalOutput > limits.maxOutputBytes) {
+      return fail(
+        'LIMIT_EXCEEDED',
+        [
+          ...report.diagnostics,
+          sdkDiagnostic(SdkDiagnosticCode.RUN_OUTPUT_TOO_LARGE, 'error', `Importer output is ${totalOutput} bytes; the limit is ${limits.maxOutputBytes}.`),
+        ],
+        { summary, outputBytes: totalOutput },
+      );
+    }
+
+    // 6. Compress into the deterministic archive.
+    let archive: BuiltImporterArchive;
+    try {
+      archive = zipPlannedArchive(plan);
+    } catch (error) {
+      return invalid([`archive could not be built: ${describeThrown(error)}`]);
+    }
     return outcome('succeeded', report.diagnostics, { summary, archive, outputBytes: totalOutput });
   }
 

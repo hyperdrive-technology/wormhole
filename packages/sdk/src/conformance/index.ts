@@ -121,6 +121,48 @@ function summarizeDiagnostics(outcome: ImportRunOutcome): string {
     .join(' | ');
 }
 
+/**
+ * `String()` that never throws: an object without `toString` (`Object.create(null)`) or with a
+ * throwing one would otherwise crash the report itself.
+ */
+function safeString(value: unknown): string {
+  try {
+    return String(value);
+  } catch {
+    return Object.prototype.toString.call(value);
+  }
+}
+
+/**
+ * Capability ids as declared, read defensively. This runs before `manifest-valid`, on a
+ * manifest nobody has checked yet, so any shape (non-array `capabilities`, `null` items, a
+ * throwing getter) must give a list, never an exception: a malformed manifest has to end up
+ * as a failing check in the report (wormhole#13).
+ */
+function declaredCapabilityIds(importer: WormholeImporter): string[] {
+  try {
+    const capabilities: unknown = importer?.manifest?.capabilities;
+    if (!Array.isArray(capabilities)) return [];
+    // Any non-null object, not just a plain record: class instances and objects from another
+    // realm are valid capabilities to validateImporterManifest(), so their ids must be read too.
+    return capabilities.map((capability: unknown) =>
+      safeString(typeof capability === 'object' && capability !== null ? (capability as { id?: unknown }).id : undefined),
+    );
+  } catch {
+    return [];
+  }
+}
+
+/** The manifest id for the report header, or `(unknown)` when it cannot be read. */
+function reportedImporterId(importer: WormholeImporter): string {
+  try {
+    const id: unknown = (importer as Partial<WormholeImporter> | undefined)?.manifest?.id;
+    return id === undefined || id === null ? '(unknown)' : safeString(id);
+  } catch {
+    return '(unknown)';
+  }
+}
+
 /** Captures everything the checks share: the importer, its fixtures, and helpers to run them. */
 class ConformanceSubject {
   readonly importer: WormholeImporter;
@@ -130,8 +172,7 @@ class ConformanceSubject {
   constructor(importer: WormholeImporter, fixtures: readonly ConformanceFixture[]) {
     this.importer = importer;
     this.fixtures = fixtures;
-    const capabilities = (importer?.manifest?.capabilities ?? []) as Array<{ id?: unknown }>;
-    this.capabilityIds = capabilities.map((capability) => String(capability?.id));
+    this.capabilityIds = declaredCapabilityIds(importer);
   }
 
   capability(id: string) {
@@ -508,9 +549,14 @@ async function checkLimitsHonoured(subject: ConformanceSubject): Promise<CheckOu
   const files = Object.values(fixture.files).map(toBytes);
   const totalBytes = files.reduce((sum, bytes) => sum + bytes.byteLength, 0);
 
-  const expectLimit = async (label: string, run: Promise<ImportRunOutcome>): Promise<void> => {
+  const expectLimit = async (
+    label: string,
+    run: Promise<ImportRunOutcome>,
+    alsoAccepted: ReadonlyArray<string> = [],
+  ): Promise<void> => {
     const outcome = await run;
-    if (outcome.failure?.code !== 'LIMIT_EXCEEDED') {
+    const code = outcome.failure?.code;
+    if (code !== 'LIMIT_EXCEEDED' && !(code !== undefined && alsoAccepted.includes(code))) {
       problems.push(`${label}: run ended as ${outcome.status}/${outcome.failure?.code ?? '-'} instead of LIMIT_EXCEEDED`);
     }
     problems.push(...diagnosticsReportProblems(outcome.diagnostics).map((p) => `${label}: diagnostics ${p}`));
@@ -522,7 +568,10 @@ async function checkLimitsHonoured(subject: ConformanceSubject): Promise<CheckOu
   if (totalBytes >= 2) {
     await expectLimit('maxInputBytes', subject.run(fixture, { limits: { maxInputBytes: totalBytes - 1 } }));
   }
-  await expectLimit('maxOutputBytes', subject.run(fixture, { limits: { maxOutputBytes: 1 } }));
+  // The host measures output on the serialised archive, so a result that cannot become an
+  // archive (unsafe paths, schema errors) fails as INVALID_RESULT before the size check.
+  // outputs-schema-valid already reports that; don't report it twice here.
+  await expectLimit('maxOutputBytes', subject.run(fixture, { limits: { maxOutputBytes: 1 } }), ['INVALID_RESULT']);
 
   // A fake clock that jumps a minute per reading: the deadline has always passed by the
   // time the importer returns (or calls ctx.throwIfAborted()), with no real waiting.
@@ -649,8 +698,7 @@ export async function runImporterConformance(
     const missing = requireFixtures(subject);
     checks.push({ name, ...(missing ?? (await guard(runners[name]))) });
   }
-  const importerId = String((importer as Partial<WormholeImporter> | undefined)?.manifest?.id ?? '(unknown)');
-  return { importerId, ok: checks.every((check) => check.status !== 'fail'), checks };
+  return { importerId: reportedImporterId(importer), ok: checks.every((check) => check.status !== 'fail'), checks };
 }
 
 async function guard(run: () => Promise<CheckOutcome>): Promise<CheckOutcome> {

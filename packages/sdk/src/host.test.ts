@@ -479,6 +479,25 @@ describe('ImporterHost.run: misbehaving importers', () => {
     expectFailure(outcome, 'INVALID_RESULT', 'WORMHOLE_RUN_INVALID_RESULT');
   });
 
+  // wormhole#7: these used to escape run() as a rejection from JSON.stringify.
+  it.each([
+    ['a circular array', () => { const cycle: unknown[] = []; cycle.push(cycle); return cycle; }],
+    ['a circular entry', () => { const entry: Record<string, unknown> = { code: 'X', message: 'm' }; entry.self = entry; return [entry]; }],
+    ['a BigInt field', () => [{ code: 'X', message: 'm', count: 1n }]],
+    ['a BigInt message', () => [{ code: 'X', message: 1n }]],
+    ['a getter that throws', () => [Object.defineProperty({ code: 'X' }, 'message', { enumerable: true, get: () => { throw new Error('boom'); } })]],
+  ])('returns INVALID_RESULT (never rejects) for unsupportedSemantics with %s', async (_, make) => {
+    const outcome = await runToy({ unsupportedSemantics: make() as never });
+    expectFailure(outcome, 'INVALID_RESULT', 'WORMHOLE_RUN_INVALID_RESULT');
+  });
+
+  it('returns INVALID_RESULT for unserialisable unsupportedSemantics even when the output limit is tiny', async () => {
+    const cycle: unknown[] = [];
+    cycle.push(cycle);
+    const outcome = await runToy({ unsupportedSemantics: cycle as never }, { limits: { maxOutputBytes: 1 } });
+    expectFailure(outcome, 'INVALID_RESULT', 'WORMHOLE_RUN_INVALID_RESULT');
+  });
+
   it('lists every unsafe output path', async () => {
     const outcome = await runToy({
       sources: {
@@ -533,6 +552,51 @@ describe('ImporterHost.run: misbehaving importers', () => {
     const withMetadata = await runToy({ summary: { message: 'z'.repeat(1_000) } });
     expect(withMetadata.status).toBe('succeeded');
     expect(withMetadata.stats.outputBytes - small.stats.outputBytes).toBeGreaterThanOrEqual(1_000 - 'ok'.length);
+  });
+});
+
+// wormhole#11 (and #3): maxOutputBytes measures the bytes actually serialised into the
+// archive entries (pretty-printed manifest.json and diagnostics.json included), plus the
+// outcome summary, not a compact-JSON estimate.
+describe('ImporterHost.run: maxOutputBytes counts serialised bytes', () => {
+  const rich = (): Partial<ImportResult> => ({
+    sources: { 'sources/a.plc': 'VAR_GLOBAL\nEND_VAR\n', 'sources/b.plc': 'PROGRAM B\nEND_PROGRAM\n' },
+    preservation: { 'preservation/a.txt': 'original', 'preservation/raw.bin': new Uint8Array([0, 1, 2, 255]) },
+    assets: { 'assets/icon.svg': '<svg/>' },
+    diagnostics: Array.from({ length: 12 }, (_, index) => ({ code: `TOY_NOTE_${index}`, message: `note ${index}`, severity: 'info' as const })),
+    unsupportedSemantics: Array.from({ length: 8 }, (_, index) => ({ code: `TOY_GAP_${index}`, message: `gap ${index}`, severity: 'warning' as const })),
+    summary: { message: 'converted', stats: { files: 2, gaps: 8 } },
+  });
+
+  function serialisedBytes(outcome: ImportRunOutcome): number {
+    const entries = outcome.archive!.entries.reduce((sum, entry) => sum + entry.bytes.byteLength, 0);
+    return entries + Buffer.byteLength(JSON.stringify(outcome.summary), 'utf8');
+  }
+
+  it('reports exactly the serialised entry bytes plus the summary', async () => {
+    const outcome = await runToy(rich());
+    expect(outcome.status).toBe('succeeded');
+    expect(outcome.stats.outputBytes).toBe(serialisedBytes(outcome));
+  });
+
+  it('succeeds at the exact limit and fails one byte below it', async () => {
+    const exact = serialisedBytes(await runToy(rich()));
+    const atLimit = await runToy(rich(), { limits: { maxOutputBytes: exact } });
+    expect(atLimit.status).toBe('succeeded');
+    const below = await runToy(rich(), { limits: { maxOutputBytes: exact - 1 } });
+    expectFailure(below, 'LIMIT_EXCEEDED', 'WORMHOLE_RUN_OUTPUT_TOO_LARGE');
+    expect(below.stats.outputBytes).toBe(exact);
+  });
+
+  it('reports an invalid result before the output limit', async () => {
+    const outcome = await runToy({ sources: { 'sources/../x.plc': 'x' } }, { limits: { maxOutputBytes: 1 } });
+    expectFailure(outcome, 'INVALID_RESULT', 'WORMHOLE_RUN_UNSAFE_OUTPUT_PATH');
+  });
+
+  it('counts the multi-byte UTF-8 size of text, not its length', async () => {
+    const plain = await runToy({ sources: { 'sources/a.plc': 'a'.repeat(100) } });
+    const wide = await runToy({ sources: { 'sources/a.plc': '\u00e9'.repeat(100) } });
+    expect(wide.stats.outputBytes - plain.stats.outputBytes).toBe(100);
   });
 });
 

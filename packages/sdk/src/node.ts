@@ -2,7 +2,7 @@
  * Filesystem loaders (`@wormhole/sdk/node`). Hosts use these to turn a path into a
  * {@link VirtualFileTree}; importers never import this module, they only see the tree.
  */
-import { lstat, open, readdir, readFile } from 'node:fs/promises';
+import { lstat, open, readdir } from 'node:fs/promises';
 import { basename, extname, join } from 'node:path';
 
 import type { ImporterDiagnostic } from '@wormhole/contract';
@@ -130,13 +130,16 @@ export async function loadInputFromZipFile(path: string, options: LoadInputOptio
 /**
  * A directory, recursively (container `directory`). Symbolic links are skipped with a
  * warning (they could point outside the directory), as are sockets, FIFOs and devices.
- * Sizes are checked against the limits before any file content is read.
+ * Sizes are checked against the limits before any file content is read, and each read is
+ * bounded by the remaining byte budget in case a file grew after the walk.
  */
 export async function loadInputFromDirectory(path: string, options: LoadInputOptions = {}): Promise<TreeLoadResult> {
   const limits = resolveLimits(options.limits);
   const diagnostics: ImporterDiagnostic[] = [];
   const planned: Array<{ relative: string; absolute: string }> = [];
   let plannedBytes = 0;
+  const tooLarge = (): TreeLoadResult =>
+    fatal('directory', [...diagnostics, sdkDiagnostic(SdkDiagnosticCode.INPUT_TOO_LARGE, 'error', `Input directory is larger than ${limits.maxInputBytes} bytes.`)]);
   try {
     const rootInfo = await lstat(path);
     if (!rootInfo.isDirectory()) {
@@ -162,18 +165,23 @@ export async function loadInputFromDirectory(path: string, options: LoadInputOpt
           if (planned.length > limits.maxInputFiles) {
             return fatal('directory', [...diagnostics, sdkDiagnostic(SdkDiagnosticCode.INPUT_TOO_MANY_FILES, 'error', `Input directory has more than ${limits.maxInputFiles} files.`)]);
           }
-          if (plannedBytes > limits.maxInputBytes) {
-            return fatal('directory', [...diagnostics, sdkDiagnostic(SdkDiagnosticCode.INPUT_TOO_LARGE, 'error', `Input directory is larger than ${limits.maxInputBytes} bytes.`)]);
-          }
+          if (plannedBytes > limits.maxInputBytes) return tooLarge();
         } else {
           diagnostics.push(sdkDiagnostic(SdkDiagnosticCode.INPUT_SPECIAL_FILE_SKIPPED, 'warning', `Skipped special file ${JSON.stringify(relative)}.`));
         }
       }
     }
+    // The walk's sizes are only a plan: a file can grow before it is read. Each read is
+    // therefore bounded by what is left of the cumulative budget, so the loader never holds
+    // more than maxInputBytes + 1 bytes however the files change underneath it (wormhole#10).
     const files: VirtualFileEntryInput[] = [];
+    let readBytes = 0;
     for (const item of planned) {
       options.signal?.throwIfAborted();
-      files.push({ path: item.relative, content: await readFile(item.absolute) });
+      const content = await readBounded(item.absolute, limits.maxInputBytes - readBytes);
+      if (content === 'too-large') return tooLarge();
+      readBytes += content.byteLength;
+      files.push({ path: item.relative, content });
     }
     const loaded = VirtualFileTree.fromEntries(files, { limits, container: 'directory' });
     return { ...loaded, diagnostics: [...diagnostics, ...loaded.diagnostics] };
