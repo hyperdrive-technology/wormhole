@@ -90,13 +90,16 @@ export const ilPreservationRule: UpgradeRule = {
 };
 
 /**
- * The source's relative path without its `.plc`/`.st` extension, with `/` separators and
- * no empty, `.` or `..` segments: `x\\main.st` -> `x/main`. Using the whole path (not just
+ * The source's relative path without its `.plc`/`.st` extension, NFC-normalised, with `/`
+ * separators and no empty, `.` or `..` segments: `x\\main.st` -> `x/main`. Using the whole path (not just
  * the base name) is what keeps `x/main.st` and `y/main.st` from sharing a sidecar, the same
  * way `sources/x/main.plc` and `sources/y/main.plc` stay apart.
  */
 export function ilSidecarStem(fileName: string): string {
-  const segments = fileName.split(/[/\\]+/).filter((segment) => segment !== '' && segment !== '.' && segment !== '..');
+  // NFC, like checkRelativePath and the archive builder: macOS hands out decomposed (NFD)
+  // names, and a sidecar named from the raw form would not match its own normalised path
+  // (wormhole#9).
+  const segments = fileName.normalize('NFC').split(/[/\\]+/).filter((segment) => segment !== '' && segment !== '.' && segment !== '..');
   return segments.join('/').replace(/\.(plc|st)$/i, '') || 'source';
 }
 

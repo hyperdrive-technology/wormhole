@@ -90,9 +90,14 @@ export const iec61131UpgradeImporter = defineImporter({
       diagnostics.push(diagnostic('WORMHOLE_IEC_NO_SOURCES', 'error', 'The input contains no .plc or .st files.'));
     }
 
-    for (const path of paths) {
+    for (const rawPath of paths) {
       ctx.throwIfAborted();
-      const bytes = files.read(path) ?? new Uint8Array(0);
+      const bytes = files.read(rawPath) ?? new Uint8Array(0);
+      // Every name this importer builds or compares (output path, sidecar path, collision
+      // keys, diagnostics) uses the NFC form, the same form checkRelativePath and the archive
+      // builder use. The SDK's tree already normalises, but a tree from another SDK copy may
+      // not, and a raw NFD name (macOS) used to fail as an "unusable path" (wormhole#9).
+      const path = rawPath.normalize('NFC');
       if (bytes.byteLength === 0) {
         diagnostics.push(diagnostic('WORMHOLE_IEC_EMPTY_SOURCE', 'warning', `${path} is empty and was skipped.`, path));
         skippedFiles += 1;
