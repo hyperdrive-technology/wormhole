@@ -11,8 +11,30 @@
 
 /** Longest path accepted, in UTF-16 code units, after normalisation. */
 export const MAX_RELATIVE_PATH_LENGTH = 1024;
-/** Longest single path segment accepted (most filesystems cap a name at 255 bytes). */
+/**
+ * Longest single path segment accepted. Always enforced in UTF-16 code units; `portable`
+ * mode also enforces it in UTF-8 bytes, because ext4, APFS and most other filesystems cap a
+ * name at 255 *bytes* and a multibyte name reaches that long before 255 characters
+ * (wormhole#12).
+ */
 export const MAX_PATH_SEGMENT_LENGTH = 255;
+
+/**
+ * UTF-8 length of a well-formed string, without allocating an encoded copy. Code points
+ * below U+0080 take 1 byte, below U+0800 2, other BMP code points 3, and a surrogate pair
+ * (one astral code point) 4, i.e. 2 per UTF-16 code unit of the pair.
+ */
+export function utf8ByteLength(value: string): number {
+  let bytes = 0;
+  for (let index = 0; index < value.length; index += 1) {
+    const unit = value.charCodeAt(index);
+    if (unit < 0x80) bytes += 1;
+    else if (unit < 0x800) bytes += 2;
+    else if (unit >= 0xd800 && unit <= 0xdfff) bytes += 2;
+    else bytes += 3;
+  }
+  return bytes;
+}
 
 export interface RelativePathOptions {
   /**
@@ -33,6 +55,17 @@ const CONTROL_CHARS = /[\u0000-\u001f\u007f]/;
 const WINDOWS_FORBIDDEN_CHARS = /[<>:"|?*]/;
 const WINDOWS_RESERVED_NAME = /^(?:con|prn|aux|nul|com[0-9¹²³]|lpt[0-9¹²³])(?:\.|$)/i;
 const DRIVE_PREFIX = /^[A-Za-z]:/;
+/**
+ * A UTF-16 surrogate without its partner. It has no UTF-8 encoding, so it cannot be part of
+ * a file name on disk. (`String.prototype.isWellFormed` does the same but needs lib ES2024.)
+ */
+const LONE_SURROGATE = /[\ud800-\udbff](?![\udc00-\udfff])|(?<![\ud800-\udbff])[\udc00-\udfff]/;
+
+/** The first 32 code points of a long segment, for diagnostics. */
+function preview(segment: string): string {
+  const codePoints = Array.from(segment);
+  return codePoints.length > 32 ? `${codePoints.slice(0, 32).join('')}...` : segment;
+}
 
 /**
  * Normalises and validates a relative, `/`-separated path.
@@ -72,6 +105,15 @@ export function checkRelativePath(
       return fail(`path segment is longer than ${MAX_PATH_SEGMENT_LENGTH} characters`);
     }
     if (options.portable) {
+      if (LONE_SURROGATE.test(segment)) {
+        return fail(`path segment ${JSON.stringify(segment)} is not well-formed Unicode (it contains a lone surrogate)`);
+      }
+      const bytes = utf8ByteLength(segment);
+      if (bytes > MAX_PATH_SEGMENT_LENGTH) {
+        return fail(
+          `path segment ${JSON.stringify(preview(segment))} is ${bytes} bytes in UTF-8; the limit is ${MAX_PATH_SEGMENT_LENGTH} bytes, which most filesystems enforce`,
+        );
+      }
       if (WINDOWS_FORBIDDEN_CHARS.test(segment)) {
         return fail(`path segment "${segment}" contains a character Windows does not allow`);
       }
