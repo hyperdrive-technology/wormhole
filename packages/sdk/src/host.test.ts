@@ -491,6 +491,62 @@ describe('ImporterHost.run: misbehaving importers', () => {
     expectFailure(outcome, 'INVALID_RESULT', 'WORMHOLE_RUN_INVALID_RESULT');
   });
 
+  // wormhole#16: run() read result.summary again after validating it, so a getter that
+  // changed its answer slipped a BigInt past validation into JSON.stringify and run() rejected.
+  describe('a summary that changes between reads (wormhole#16)', () => {
+    function flipping<T>(first: T, later: unknown, firstReads = 1): () => T {
+      let reads = 0;
+      return () => (++reads <= firstReads ? first : (later as T));
+    }
+
+    it('snapshots summary.stats once: a stat getter that turns into a BigInt never rejects run()', async () => {
+      const stats = Object.defineProperty({}, 'files', { enumerable: true, get: flipping(1, 1n) });
+      const outcome = await runToy({ summary: { message: 'ok', stats } });
+      expect(outcome.status).toBe('succeeded');
+      expect(outcome.summary).toEqual({ message: 'ok', stats: { files: 1 } });
+      expect(() => JSON.stringify(outcome.summary)).not.toThrow();
+    });
+
+    it.each([
+      ['a BigInt', 1n],
+      ['an object', { not: 'a string' }],
+      ['a getter that throws', undefined],
+    ])('snapshots summary.message once: a message that turns into %s never rejects run()', async (label, later) => {
+      let reads = 0;
+      const summary = Object.defineProperty({}, 'message', {
+        enumerable: true,
+        get: () => {
+          reads += 1;
+          if (reads <= 2) return 'ok';
+          if (label === 'a getter that throws') throw new Error('boom');
+          return later;
+        },
+      });
+      const outcome = await runToy({ summary: summary as never });
+      expect(['succeeded', 'failed']).toContain(outcome.status);
+      if (outcome.status === 'failed') expect(outcome.failure?.code).toBe('INVALID_RESULT');
+      if (outcome.summary) expect(typeof outcome.summary.message).toBe('string');
+      expect(() => JSON.stringify(outcome.summary)).not.toThrow();
+    });
+
+    it('keeps the snapshotted summary on NO_SOURCES failures as well', async () => {
+      const stats = Object.defineProperty({}, 'files', { enumerable: true, get: flipping(0, 1n) });
+      const outcome = await runToy({ sources: {}, summary: { message: 'nothing', stats } });
+      expectFailure(outcome, 'NO_SOURCES', 'WORMHOLE_RUN_NO_SOURCES');
+      expect(outcome.summary).toEqual({ message: 'nothing', stats: { files: 0 } });
+    });
+
+    it('turns a throw while checking the result into INVALID_RESULT instead of rejecting', async () => {
+      const diagnostics = [Object.defineProperty({ code: 'X', severity: 'error' }, 'message', {
+        enumerable: true,
+        get: flipping('first', undefined, 1),
+      })];
+      Object.defineProperty(diagnostics[0], 'source', { enumerable: true, get: () => { throw new Error('boom'); } });
+      const outcome = await runToy({ diagnostics: diagnostics as never });
+      expectFailure(outcome, 'INVALID_RESULT', 'WORMHOLE_RUN_INVALID_RESULT');
+    });
+  });
+
   it('returns INVALID_RESULT for unserialisable unsupportedSemantics even when the output limit is tiny', async () => {
     const cycle: unknown[] = [];
     cycle.push(cycle);

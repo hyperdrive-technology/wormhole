@@ -64,3 +64,23 @@ export function importResultShapeProblems(value: unknown): string[] {
   }
   return problems;
 }
+
+/**
+ * A shallow copy of an importer's return value in which `summary` (and `summary.stats`) are
+ * plain objects whose values were each read exactly once. The host validates and serialises
+ * only this copy, so a getter that changes its answer between reads cannot slip an
+ * unvalidated value (a BigInt, an object) into `JSON.stringify` (wormhole#16).
+ *
+ * Non-records are returned unchanged for `importResultShapeProblems` to reject. May throw if
+ * a getter throws; callers treat that as an invalid result.
+ */
+export function snapshotResult(value: unknown): unknown {
+  if (!isPlainRecord(value)) return value;
+  const copy: Record<string, unknown> = { ...value };
+  if (isPlainRecord(copy.summary)) {
+    const summary: Record<string, unknown> = { ...copy.summary };
+    if (isPlainRecord(summary.stats)) summary.stats = { ...summary.stats };
+    copy.summary = summary;
+  }
+  return copy;
+}
