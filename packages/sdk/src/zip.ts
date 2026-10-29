@@ -32,7 +32,7 @@ export interface ReadZipOptions {
  * - Every entry's CRC-32 is checked (yauzl leaves that to the caller).
  * - Duplicate names make the archive fatal: different tools would extract different files.
  * - Encrypted entries and compression methods other than store/deflate are skipped with an
- *   error diagnostic.
+ *   error diagnostic. They still count towards `maxInputFiles` and `maxInputBytes`.
  * - Nested archives are **not** expanded; a `.zip` inside a zip is an ordinary file. An
  *   importer that needs one can call `readZipTree` on its bytes with its remaining budget.
  */
@@ -104,6 +104,10 @@ function collectZipEntries(
           return;
         }
         const files: VirtualFileEntryInput[] = [];
+        // Every non-directory entry counts towards maxInputFiles, including ones skipped as
+        // unsupported below; counting only decoded `files` let an archive of encrypted or
+        // unknown-compression entries pass the limit (wormhole#6).
+        let fileEntries = 0;
         let declaredBytes = 0;
         let settled = false;
         const finish = (result: CollectedEntries | Error): void => {
@@ -139,7 +143,8 @@ function collectZipEntries(
             zipfile.readEntry();
             return;
           }
-          if (files.length + 1 > limits.maxInputFiles) {
+          fileEntries += 1;
+          if (fileEntries > limits.maxInputFiles) {
             finish({
               fatal: sdkDiagnostic(
                 SdkDiagnosticCode.INPUT_TOO_MANY_FILES,
