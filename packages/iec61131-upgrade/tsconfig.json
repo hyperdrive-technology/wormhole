@@ -9,11 +9,16 @@
     "esModuleInterop": true,
     "isolatedModules": true,
     "noEmit": true,
+    "resolveJsonModule": true,
     "baseUrl": ".",
     "paths": {
       "@wormhole/contract": ["../contract/src/index.ts"],
-      "@wormhole/migrate": ["../migrate/src/index.ts"]
+      "@wormhole/migrate": ["../migrate/src/index.ts"],
+      "@wormhole/sdk": ["../sdk/src/index.ts"],
+      "@wormhole/sdk/conformance": ["../sdk/src/conformance/index.ts"],
+      "@wormhole/sdk/conformance/vitest": ["../sdk/src/conformance/vitest.ts"],
+      "@wormhole/sdk/node": ["../sdk/src/node.ts"]
     }
   },
-  "include": ["src/**/*"]
+  "include": ["src/**/*", "wormhole.importer.json"]
 }

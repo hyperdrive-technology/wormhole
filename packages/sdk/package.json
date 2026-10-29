@@ -1,0 +1,73 @@
+{
+  "name": "@wormhole/sdk",
+  "version": "0.1.0",
+  "description": "Wormhole importer SDK: importer contract, host, virtual input trees and conformance kit",
+  "type": "module",
+  "main": "./dist/index.js",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./node": {
+      "types": "./dist/node.d.ts",
+      "import": "./dist/node.js"
+    },
+    "./conformance": {
+      "types": "./dist/conformance/index.d.ts",
+      "import": "./dist/conformance/index.js"
+    },
+    "./conformance/vitest": {
+      "types": "./dist/conformance/vitest.d.ts",
+      "import": "./dist/conformance/vitest.js"
+    },
+    "./schemas/*": "./dist/schemas/*"
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "tsup && rollup --config rollup.dts.config.mjs --silent",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "prepare": "pnpm run build"
+  },
+  "dependencies": {
+    "ajv": "^8.20.0",
+    "fflate": "0.8.2",
+    "semver": "^7.8.5",
+    "yauzl": "^3.4.0"
+  },
+  "peerDependencies": {
+    "vitest": ">=3.0.0"
+  },
+  "peerDependenciesMeta": {
+    "vitest": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "@types/node": "^24.13.2",
+    "@types/semver": "^7.8.0",
+    "@types/yauzl": "^3.4.0",
+    "@wormhole/contract": "workspace:*",
+    "@wormhole/migrate": "workspace:*",
+    "rollup": "^4.62.2",
+    "rollup-plugin-dts": "^6.5.1",
+    "tsup": "^8.5.1",
+    "typescript": "^5.9.3",
+    "vitest": "^3.2.6"
+  },
+  "license": "MIT",
+  "engines": {
+    "node": ">=26"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/hyperdrive-technology/wormhole.git",
+    "directory": "packages/sdk"
+  }
+}

@@ -10,13 +10,15 @@
     ".": {
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
-    }
+    },
+    "./wormhole.importer.json": "./wormhole.importer.json"
   },
   "bin": {
     "wormhole": "./dist/cli.js"
   },
   "files": [
-    "dist"
+    "dist",
+    "wormhole.importer.json"
   ],
   "scripts": {
     "build": "tsup src/index.ts src/cli.ts src/upgrade.ts --format esm --dts --clean",
@@ -28,10 +30,13 @@
   "dependencies": {
     "@wormhole/contract": "workspace:*",
     "@wormhole/migrate": "workspace:*",
+    "@wormhole/sdk": "workspace:*",
     "commander": "^12.0.0"
   },
   "devDependencies": {
     "@types/node": "^24.0.0",
+    "ajv": "^8.20.0",
+    "fflate": "0.8.2",
     "tsup": "^8.0.0",
     "typescript": "^5.0.0",
     "vitest": "^3.0.0"

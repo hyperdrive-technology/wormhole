@@ -1,0 +1,26 @@
+{
+  "schemaVersion": "wormhole.importer.v1",
+  "id": "wormhole.iec61131-upgrade",
+  "name": "IEC 61131-3 Edition 4 source upgrade",
+  "description": "Upgrades legacy IEC 61131-3 Structured Text (.plc/.st) toward Edition 4: octal literals, untyped TRUNC, BCD helpers, nameless AT declarations, IL bodies (preserved as sidecars) and deprecated constructs.",
+  "version": "0.1.0",
+  "license": "MIT",
+  "sdk": "^1.0.0",
+  "entry": "dist/index.js",
+  "capabilities": [
+    {
+      "id": "iec61131-ed4-upgrade",
+      "displayName": "IEC 61131 Edition 3 → Edition 4 source upgrade",
+      "vendor": "IEC 61131-3 (vendor-neutral)",
+      "vendorFamily": "iec61131-legacy",
+      "productVersions": ["Edition 2", "Edition 3"],
+      "inputs": {
+        "fileExtensions": [".plc", ".st"],
+        "mediaTypes": ["text/plain"],
+        "containers": ["file", "directory", "zip"],
+        "maxBytes": 10485760
+      },
+      "outputs": ["sources", "diagnostics", "preservation"]
+    }
+  ]
+}
