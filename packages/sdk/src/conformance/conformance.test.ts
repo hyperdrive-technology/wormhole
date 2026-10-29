@@ -50,6 +50,27 @@ describe('runImporterConformance', () => {
     expect(statusOf(report, 'detect-cheap')?.details).toEqual(['skipped because manifest-valid failed; the importer cannot be registered']);
   });
 
+  // wormhole#13: a malformed manifest must give a failing report, never a rejection.
+  it.each([
+    ['capabilities is an object', () => ({ ...toyManifest(), capabilities: {} })],
+    ['capabilities is a string', () => ({ ...toyManifest(), capabilities: 'abc' })],
+    ['capabilities holds null', () => ({ ...toyManifest(), capabilities: [null] })],
+    ['capabilities holds an id that cannot be stringified', () => ({ ...toyManifest(), capabilities: [{ id: Object.create(null) }] })],
+    ['manifest is null', () => null],
+    ['the id cannot be stringified', () => ({ ...toyManifest(), id: Object.create(null) })],
+  ])('reports (never rejects) a malformed manifest: %s', async (_, make) => {
+    const report = await expectFailing(toyImporter({ manifest: make() as unknown as ImporterManifest }), [...CONFORMANCE_CHECKS]);
+    expect(statusOf(report, 'manifest-valid')?.details.length).toBeGreaterThan(0);
+    expect(typeof report.importerId).toBe('string');
+  });
+
+  it('reports (never rejects) an importer whose manifest getter throws', async () => {
+    const importer = toyImporter();
+    Object.defineProperty(importer, 'manifest', { get: () => { throw new Error('boom'); } });
+    const report = await expectFailing(importer, [...CONFORMANCE_CHECKS]);
+    expect(report.importerId).toBe('(unknown)');
+  });
+
   it('fails manifest-valid for an incompatible sdk range', async () => {
     const report = await expectFailing(toyImporter({ manifest: toyManifest({ sdk: '^2.0.0' }) }), [...CONFORMANCE_CHECKS]);
     expect(statusOf(report, 'manifest-valid')?.details.join('\n')).toContain('does not include');
@@ -115,7 +136,9 @@ describe('runImporterConformance', () => {
   it('fails outputs-schema-valid for diagnostics that break the schema', async () => {
     await expectFailing(
       patchedToy((result) => ({ ...result, diagnostics: [...result.diagnostics, { code: 'X', message: 'bad', severity: 'fatal' as never }] })),
-      ['outputs-schema-valid', 'archive-deterministic', 'limits-honoured', 'garbage-input-diagnosed'],
+      // Not limits-honoured: an invalid result fails as INVALID_RESULT before the output
+      // limit, and outputs-schema-valid already reports it.
+      ['outputs-schema-valid', 'archive-deterministic', 'garbage-input-diagnosed'],
     );
   });
 
