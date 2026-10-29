@@ -148,10 +148,11 @@ describe('iec61131 importer import()', () => {
     expect(badOption.sources['sources/a.plc']).not.toBe(tierA);
   });
 
-  it('refuses two inputs that map to the same output', async () => {
+  it('reports every colliding input and imports none of them', async () => {
     const result = await importFiles({ 'a.plc': 'PROGRAM A\nEND_PROGRAM\n', 'a.st': 'PROGRAM B\nEND_PROGRAM\n', 'A.st': 'PROGRAM C\nEND_PROGRAM\n' });
-    expect(Object.keys(result.sources)).toEqual(['sources/A.plc']);
+    expect(result.sources).toEqual({});
     expect(codes(result).filter((code) => code === 'WORMHOLE_IEC_OUTPUT_COLLISION')).toHaveLength(2);
+    expect(result.summary.stats).toMatchObject({ sourcesLost: 2 });
   });
 
   // PR #1 review P1: x/main.st and y/main.st used to share preservation/il/main-<POU>.il.txt,
@@ -238,10 +239,43 @@ describe('iec61131 importer import()', () => {
     });
   });
 
-  it('skips inputs whose output path would not be portable', async () => {
+  it('fails instead of dropping inputs whose output path would not be portable', async () => {
     const result = await importFiles({ 'dir/a:b.st': 'PROGRAM P\nEND_PROGRAM\n', 'CON.st': 'PROGRAM Q\nEND_PROGRAM\n' });
     expect(result.sources).toEqual({});
     expect(codes(result).filter((code) => code === 'WORMHOLE_IEC_UNPORTABLE_PATH')).toHaveLength(2);
+  });
+
+  // GPT review on wormhole#1: `a.plc` and `a.st` both map to sources/a.plc. Skipping one used
+  // to return a "succeeded" result holding only the other program.
+  describe('when two inputs map to the same output', () => {
+    it.each([
+      ['extension variants', { 'a.plc': 'PROGRAM B\nEND_PROGRAM\n', 'a.st': 'PROGRAM A\nEND_PROGRAM\n' }],
+      ['case variants of the same stem', { 'x/A.plc': 'PROGRAM B\nEND_PROGRAM\n', 'x/a.st': 'PROGRAM A\nEND_PROGRAM\n' }],
+    ])('returns no sources on %s', async (_, files) => {
+      const result = await importFiles(files);
+      expect(result.sources).toEqual({});
+      expect(codes(result)).toContain('WORMHOLE_IEC_OUTPUT_COLLISION');
+      expect(result.summary.message).toMatch(/^Project not imported/);
+      expect(result.summary.stats).toMatchObject({ filesUpgraded: 0, sourcesLost: 1 });
+    });
+
+    it('fails through ImporterHost with NO_SOURCES and no archive', async () => {
+      const host = new ImporterHost();
+      host.register(iec61131UpgradeImporter);
+      const outcome = await host.run({
+        capabilityId: IMPORTER_ID,
+        input: treeOf({ 'a.plc': 'PROGRAM B\nEND_PROGRAM\n', 'a.st': 'PROGRAM A\nEND_PROGRAM\n' }),
+      });
+      expect(outcome.status).toBe('failed');
+      expect(outcome.failure?.code).toBe('NO_SOURCES');
+      expect(outcome.archive).toBeUndefined();
+      expect(outcome.diagnostics.diagnostics.map((diagnostic) => diagnostic.code)).toContain('WORMHOLE_IEC_OUTPUT_COLLISION');
+    });
+
+    it('still succeeds when a binary or empty file is skipped (no logic is lost)', async () => {
+      const result = await importFiles({ 'a.plc': '', 'a.st': 'PROGRAM A\nEND_PROGRAM\n' });
+      expect(Object.keys(result.sources)).toEqual(['sources/a.plc']);
+    });
   });
 
   it('stops with the abort reason when cancelled', async () => {

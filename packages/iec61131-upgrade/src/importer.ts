@@ -70,6 +70,13 @@ export const iec61131UpgradeImporter = defineImporter({
     /** Lower-cased sidecar path -> the sidecar and the input file that produced it. */
     const sidecarOwners = new Map<string, { path: string; source: string }>();
     let lostSidecars = 0;
+    /**
+     * Source files with real text that could not be written (unportable or colliding output
+     * path). Binary and empty inputs are skipped instead: they hold no program logic. A lost
+     * source fails the whole import, like a lost sidecar, so a "succeeded" archive never
+     * silently misses a program.
+     */
+    let lostSources = 0;
     let apply = true;
     if (options.apply !== undefined) {
       if (typeof options.apply === 'boolean') apply = options.apply;
@@ -99,13 +106,13 @@ export const iec61131UpgradeImporter = defineImporter({
       const outputPath = `sources/${stripSourceExtension(path)}.plc`;
       const portable = checkRelativePath(outputPath, { portable: true });
       if (!portable.ok) {
-        diagnostics.push(diagnostic('WORMHOLE_IEC_UNPORTABLE_PATH', 'error', `${path} cannot be written as ${outputPath}: ${portable.reason}.`, path));
-        skippedFiles += 1;
+        diagnostics.push(diagnostic('WORMHOLE_IEC_UNPORTABLE_PATH', 'error', `${path} cannot be written as ${outputPath}: ${portable.reason}; the import was stopped so its logic is not lost.`, path));
+        lostSources += 1;
         continue;
       }
       if (usedOutputPaths.has(outputPath.toLowerCase())) {
-        diagnostics.push(diagnostic('WORMHOLE_IEC_OUTPUT_COLLISION', 'error', `${path} would overwrite another file's output ${outputPath} and was skipped.`, path));
-        skippedFiles += 1;
+        diagnostics.push(diagnostic('WORMHOLE_IEC_OUTPUT_COLLISION', 'error', `${path} would overwrite another file's output ${outputPath}; the import was stopped so neither program is lost. Rename one of them.`, path));
+        lostSources += 1;
         continue;
       }
 
@@ -158,15 +165,19 @@ export const iec61131UpgradeImporter = defineImporter({
       ctx.logger.debug('upgraded file', { path, changed: upgraded.changed, diagnostics: upgraded.diagnostics.length });
     }
 
-    if (lostSidecars > 0) {
+    if (lostSidecars > 0 || lostSources > 0) {
       // Returning no sources makes ImporterHost fail the run (NO_SOURCES) with these
-      // diagnostics, instead of building an archive with placeholders but no IL.
+      // diagnostics, instead of building an archive that is missing program logic.
+      const lost = [
+        ...(lostSources > 0 ? [`${lostSources} source file(s) could not be written`] : []),
+        ...(lostSidecars > 0 ? [`${lostSidecars} IL preservation sidecar(s) could not be written`] : []),
+      ];
       return {
         sources: {},
         diagnostics,
         unsupportedSemantics: unsupportedSemanticsFrom(diagnostics),
         summary: {
-          message: `Project not imported: ${lostSidecars} IL preservation sidecar(s) could not be written, so their program logic would have been lost.`,
+          message: `Project not imported: ${lost.join(' and ')}, so their program logic would have been lost.`,
           stats: {
             filesFound: paths.length,
             filesUpgraded: 0,
@@ -174,6 +185,7 @@ export const iec61131UpgradeImporter = defineImporter({
             filesSkipped: paths.length,
             preservationSidecars: 0,
             preservationSidecarsLost: lostSidecars,
+            sourcesLost: lostSources,
           },
         },
       };
