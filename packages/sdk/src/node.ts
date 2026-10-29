@@ -61,18 +61,25 @@ export async function loadInputFromPath(path: string, options: LoadInputOptions 
   return loadInputFromFile(path, options);
 }
 
+const READ_CHUNK_BYTES = 64 * 1024;
+
 async function readBounded(path: string, maxBytes: number): Promise<Uint8Array | 'too-large'> {
-  // Read at most maxBytes + 1 bytes, so a file that grows after lstat() cannot blow the limit.
+  // Read until EOF, but never more than maxBytes + 1 bytes in total, so a file that grows
+  // after lstat() can neither blow the limit nor be silently truncated. (An earlier version
+  // sized one buffer from stat().size and stopped when it filled, dropping the grown tail:
+  // GPT review round 4 on PR #1.)
   const handle = await open(path, 'r');
   try {
-    const buffer = Buffer.alloc(Math.min(maxBytes + 1, (await handle.stat()).size + 1));
-    let offset = 0;
-    while (offset < buffer.length) {
-      const { bytesRead } = await handle.read(buffer, offset, buffer.length - offset, offset);
+    const chunks: Buffer[] = [];
+    let total = 0;
+    while (total <= maxBytes) {
+      const chunk = Buffer.alloc(Math.min(READ_CHUNK_BYTES, maxBytes + 1 - total));
+      const { bytesRead } = await handle.read(chunk, 0, chunk.length, total);
       if (bytesRead === 0) break;
-      offset += bytesRead;
+      chunks.push(chunk.subarray(0, bytesRead));
+      total += bytesRead;
     }
-    return offset > maxBytes ? 'too-large' : new Uint8Array(buffer.subarray(0, offset));
+    return total > maxBytes ? 'too-large' : new Uint8Array(Buffer.concat(chunks, total));
   } finally {
     await handle.close();
   }

@@ -99,7 +99,9 @@ export class ImporterArchiveError extends Error {
 
 function normalizeArchivePath(path: string): string {
   const trimmed = path.replace(/^\.\/+/, '');
-  if (/[\0\r\n\\]/.test(trimmed) || trimmed.startsWith('/') || trimmed.includes('..')) {
+  // `..` is only dangerous as a whole segment; `release..old/main.st` is a legitimate folder
+  // name, and IL sidecars now carry the input's directories (GPT review round 4 on PR #1).
+  if (/[\0\r\n\\]/.test(trimmed) || trimmed.startsWith('/') || trimmed.split('/').includes('..')) {
     throw new Error(`Invalid archive path: ${path}`);
   }
   return trimmed;

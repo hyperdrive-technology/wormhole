@@ -52,7 +52,7 @@ pnpm typecheck
 
 `pnpm test:compile-gate` also compiles the upgraded fixtures with the Hyperdrive compiler. It needs a Hyperdrive core checkout at `../core` or at `HYPERDRIVE_CORE_DIR`, and skips otherwise.
 
-`HYPERDRIVE_CORE_DIR=../core pnpm test:schema-sync` checks that the `hyperdrive.importer-*.v1` schemas in `packages/contract/schemas/` are identical to core's `docs/schemas/` copies. It runs only when `HYPERDRIVE_CORE_DIR` is set.
+`HYPERDRIVE_CORE_DIR=../core pnpm test:schema-sync` checks that the `hyperdrive.importer-*.v1` schemas in `packages/contract/schemas/` are identical to core's `docs/schemas/` copies. A relative path is resolved against the repository root. The check is skipped only when `HYPERDRIVE_CORE_DIR` is unset; a path that does not exist fails.
 
 ## First importer
 

@@ -529,6 +529,14 @@ describe('buildImporterResultArchive (legacy single-source builder)', () => {
     }
   });
 
+  it('accepts ".." inside a segment but rejects it as a segment', () => {
+    const dotted = buildImporterResultArchive({ ...LEGACY, preservation: { 'preservation/il/release..old/main-P.il.txt': 'x' } });
+    expect(dotted.manifest.preservation).toEqual(['preservation/il/release..old/main-P.il.txt']);
+    for (const path of ['preservation/../escape.txt', '../preservation/x.txt', 'preservation/il/..']) {
+      expect(() => buildImporterResultArchive({ ...LEGACY, preservation: { [path]: 'x' } })).toThrow(/Invalid archive path/);
+    }
+  });
+
   it('renames the source to sources/<base>.plc and sorts preservation', () => {
     const archive = buildImporterResultArchive(LEGACY);
     expect(archive.manifest.canonicalSources).toEqual(['sources/legacy.plc']);
