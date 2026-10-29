@@ -17,7 +17,7 @@ import { ImporterHost, type ImportRunOutcome } from '../host.js';
 import type { DetectResult, ImportOptions, ImportResult, WormholeImporter } from '../importer.js';
 import type { ImportLimits } from '../limits.js';
 import { capabilityEntries, isSdkCompatible, validateImporterManifest } from '../manifest.js';
-import { importResultShapeProblems, isPlainRecord } from '../result.js';
+import { importResultShapeProblems } from '../result.js';
 import { VirtualFileTree, type InputContainer } from '../tree.js';
 import {
   capabilitiesDocumentProblems,
@@ -143,8 +143,10 @@ function declaredCapabilityIds(importer: WormholeImporter): string[] {
   try {
     const capabilities: unknown = importer?.manifest?.capabilities;
     if (!Array.isArray(capabilities)) return [];
+    // Any non-null object, not just a plain record: class instances and objects from another
+    // realm are valid capabilities to validateImporterManifest(), so their ids must be read too.
     return capabilities.map((capability: unknown) =>
-      safeString(isPlainRecord(capability) ? capability.id : undefined),
+      safeString(typeof capability === 'object' && capability !== null ? (capability as { id?: unknown }).id : undefined),
     );
   } catch {
     return [];

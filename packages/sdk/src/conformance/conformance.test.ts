@@ -1,3 +1,5 @@
+import { runInNewContext } from 'node:vm';
+
 import { describe, expect, it } from 'vitest';
 
 import { TOY_CAPABILITY_ID, TOY_FIXTURES, toyImport, toyImporter, toyManifest } from '../__fixtures__/importers.js';
@@ -62,6 +64,17 @@ describe('runImporterConformance', () => {
     const report = await expectFailing(toyImporter({ manifest: make() as unknown as ImporterManifest }), [...CONFORMANCE_CHECKS]);
     expect(statusOf(report, 'manifest-valid')?.details.length).toBeGreaterThan(0);
     expect(typeof report.importerId).toBe('string');
+  });
+
+  // GPT review on PR #14: capability ids must still be read from objects that are not plain
+  // records (class instances, another realm), which the manifest validator accepts.
+  it.each([
+    ['a class instance', (capability: object) => Object.assign(new (class Capability {})(), capability)],
+    ['an object from another realm', (capability: object) => Object.assign(runInNewContext('({})') as object, capability)],
+  ])('passes when each capability is %s', async (_, wrap) => {
+    const manifest = toyManifest();
+    const importer = toyImporter({ manifest: { ...manifest, capabilities: manifest.capabilities.map(wrap) } as ImporterManifest });
+    await expectFailing(importer, [], { fixtures: fixtures.map((fixture) => ({ ...fixture, capabilityId: TOY_CAPABILITY_ID })) });
   });
 
   it('reports (never rejects) an importer whose manifest getter throws', async () => {

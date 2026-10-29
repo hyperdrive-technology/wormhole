@@ -10,7 +10,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 // Every byte any read in node.ts pulls off disk, through readFile() or a FileHandle. Lets the
 // tests check that a grown file is never loaded far past maxInputBytes (wormhole#10).
-const loaded = vi.hoisted(() => ({ bytes: 0 }));
+const loaded = vi.hoisted(() => ({ bytes: 0, opened: [] as string[] }));
 
 vi.mock('node:fs/promises', async (importOriginal) => {
   const actual = await importOriginal<typeof import('node:fs/promises')>();
@@ -28,6 +28,7 @@ vi.mock('node:fs/promises', async (importOriginal) => {
     },
     // fstat on the open handle too: an older readBounded sized its buffer from it.
     open: async (...args: Parameters<typeof actual.open>) => {
+      loaded.opened.push(String(args[0]));
       const handle = await actual.open(...args);
       const stat = handle.stat.bind(handle);
       handle.stat = (async (...statArgs: Parameters<typeof handle.stat>) => {
@@ -52,6 +53,7 @@ const { SdkDiagnosticCode } = await import('./diagnostics.js');
 let root: string;
 beforeEach(async () => {
   loaded.bytes = 0;
+  loaded.opened = [];
   root = await mkdtemp(join(tmpdir(), 'wormhole-growth-'));
 });
 afterEach(async () => {
@@ -97,14 +99,28 @@ describe('reading a file that grew after lstat()', () => {
   });
 
   it('loadInputFromDirectory bounds later files by what earlier files used', async () => {
-    // a.st (600 bytes) fits; b.st grew to 200 kB but planned as 1 byte. Only 400 bytes of
-    // budget remain, so reading b.st must stop just past that.
-    await writeFile(join(root, 'a.st'), 'a'.repeat(600));
-    await writeFile(join(root, 'b.st'), BIG);
-    const result = await loadInputFromDirectory(root, { limits: { maxInputBytes: 1_000 } });
-    expect(result.fatal).toBe(true);
-    expect(result.diagnostics.map((d) => d.code)).toContain(SdkDiagnosticCode.INPUT_TOO_LARGE);
-    expect(loaded.bytes).toBeLessThanOrEqual(1_001);
+    // One file (600 bytes) fits; the other grew to 200 kB but was planned as 1 byte. Whichever
+    // the loader reads first, the small one must be read before the big one for this to test
+    // the remaining budget: with only 400 bytes left, reading the big file must stop just past
+    // that. If every read got the full budget, 600 + 1001 bytes would be loaded.
+    // Both orders are tried so the test does not depend on the loader's read order.
+    for (const [small, big] of [['a.st', 'b.st'], ['b.st', 'a.st']] as const) {
+      await rm(join(root, small), { force: true });
+      await rm(join(root, big), { force: true });
+      await writeFile(join(root, small), 's'.repeat(600));
+      await writeFile(join(root, big), BIG);
+      loaded.bytes = 0;
+      loaded.opened = [];
+      const result = await loadInputFromDirectory(root, { limits: { maxInputBytes: 1_000 } });
+      expect(result.fatal).toBe(true);
+      expect(result.diagnostics.map((d) => d.code)).toContain(SdkDiagnosticCode.INPUT_TOO_LARGE);
+      const order = loaded.opened.map((path) => path.split('/').pop());
+      if (order.includes(small) && order.includes(big) && order.indexOf(small) < order.indexOf(big)) {
+        expect(loaded.bytes).toBeLessThanOrEqual(1_001);
+        return;
+      }
+    }
+    throw new Error('the loader never read the small file before the big one in either layout');
   });
 
   it('loadInputFromDirectory accepts grown files that still fit the budget exactly', async () => {
