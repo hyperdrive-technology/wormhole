@@ -46,7 +46,7 @@ export interface ImportInput {
   readonly narratives?: ReservedNarrativeInput;
 }
 
-/** A short human summary; stored in the result manifest. */
+/** A short human summary, returned on the run outcome (not yet written to the manifest, wormhole#2). */
 export interface ImportSummary {
   message: string;
   /** Named non-negative integer counters, e.g. `{ filesUpgraded: 3 }`. Keys: `^[A-Za-z][A-Za-z0-9_.-]*$`. */

@@ -7,8 +7,8 @@ import { describe, expect, it } from 'vitest';
 // Hyperdrive core's docs/schemas/ copy until core consumes this package. Core is a separate
 // (private) repo, so this guard only runs when HYPERDRIVE_CORE_DIR points at a checkout:
 //   HYPERDRIVE_CORE_DIR=../core pnpm test:schema-sync
-// It is opt-in (not defaulted to ../core) so a pending additive change on this side, such as
-// `summary` (wormhole#2), does not turn every local `pnpm test` red before core catches up.
+// It is opt-in (not defaulted to ../core) so a pending additive change on either side (e.g.
+// adding `summary`, wormhole#2) does not turn every local `pnpm test` red mid-sync.
 const coreDir = process.env.HYPERDRIVE_CORE_DIR;
 const coreSchemas = coreDir ? join(coreDir, 'docs/schemas') : undefined;
 const ownSchemas = join(dirname(fileURLToPath(import.meta.url)), '../schemas');

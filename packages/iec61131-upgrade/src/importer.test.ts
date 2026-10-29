@@ -316,13 +316,14 @@ describe('iec61131 importer through ImporterHost', () => {
     expect(strFromU8(unzipped['preservation/il/y/main-Legacy.il.txt']!)).toContain('LDN Start');
   });
 
-  // wormhole#2: the emitted manifest (including `summary`) must validate against the
-  // canonical result schema file, read from disk so this checks the published JSON.
+  // wormhole#2: the emitted manifest must validate against the result schema file on disk,
+  // which is identical to core's. `summary` stays on the outcome until core's schema has it.
   it('emits a manifest.json that validates against hyperdrive-importer-result.v1.schema.json', async () => {
     const outcome = await host.run({ capabilityId: IMPORTER_ID, input: treeOf({ 'main.st': il }) });
     expect(outcome.status).toBe('succeeded');
     const manifest = JSON.parse(strFromU8(unzipSync(outcome.archive!.zipBytes)['manifest.json']!)) as Record<string, unknown>;
-    expect(manifest.summary).toMatchObject({ message: expect.stringContaining('Upgraded 1 of 1'), stats: { preservationSidecars: 1 } });
+    expect(manifest).not.toHaveProperty('summary');
+    expect(outcome.summary).toMatchObject({ message: expect.stringContaining('Upgraded 1 of 1'), stats: { preservationSidecars: 1 } });
     const schema = JSON.parse(readFileSync(join(contractSchemasDir, 'hyperdrive-importer-result.v1.schema.json'), 'utf8')) as Record<string, unknown>;
     const validate = new Ajv2020({ allErrors: true, strict: true, strictTypes: false }).compile(schema);
     expect(validate(manifest), JSON.stringify(validate.errors)).toBe(true);

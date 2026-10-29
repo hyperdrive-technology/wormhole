@@ -142,7 +142,7 @@ interface ImportResult {
 | `signal` | Aborted on cancellation or when the wall-time limit passes. Pass it to async work. |
 | `throwIfAborted()` | Call before work and inside long loops. A synchronous importer cannot be interrupted any other way. |
 | `remainingMs()` | Time left before the wall-time limit. |
-| `limits` | `maxInputBytes`, `maxInputFiles`, `maxOutputBytes`, `maxWallTimeMs` for this run. `maxOutputBytes` covers every output file, the diagnostics, and the `summary` and `unsupportedSemantics` written into `manifest.json` (uncompressed). |
+| `limits` | `maxInputBytes`, `maxInputFiles`, `maxOutputBytes`, `maxWallTimeMs` for this run. `maxOutputBytes` covers every output file, the diagnostics, the `unsupportedSemantics` written into `manifest.json`, and the `summary` returned on the outcome (uncompressed). |
 | `logger` | Structured `debug/info/warn/error(message, fields)`. Logs are for operators; anything the user must see is a diagnostic. |
 | `migrate` | `@wormhole/migrate`'s `upgradeSource()` and `defaultRules`: the Edition 4 legacy rules (octal literals, untyped `TRUNC`, BCD helpers, nameless `AT`, IL preservation, deprecated constructs) for free. Run your generated ST through it. |
 

@@ -133,20 +133,18 @@ describe('buildImporterArchive: layout and manifest', () => {
     }
   });
 
-  it('includes unsupportedSemantics and summary when given', () => {
+  it('includes unsupportedSemantics when given', () => {
     const built = buildImporterArchive(
       input({
         manifest: {
           ...MANIFEST,
           unsupportedSemantics: [{ code: 'ACME_IL', message: 'IL preserved', severity: 'warning' }],
-          summary: { message: 'Imported 1 file.', stats: { files: 1 } },
         },
       }),
     );
     expect(built.manifest.unsupportedSemantics).toEqual([
       { code: 'ACME_IL', message: 'IL preserved', severity: 'warning' },
     ]);
-    expect(built.manifest.summary).toEqual({ message: 'Imported 1 file.', stats: { files: 1 } });
   });
 
   it('does not copy unknown manifest fields from the input', () => {
@@ -214,7 +212,7 @@ describe('buildImporterArchive: determinism', () => {
     sources: { 'sources/b.plc': 'B', 'sources/a.plc': 'A', 'sources/n/c.plc': 'C' },
     preservation: { 'preservation/x.txt': 'x', 'preservation/bin.dat': BINARY },
     assets: { 'assets/z.svg': '<svg/>', 'assets/a.png': BINARY },
-    manifest: { ...MANIFEST, summary: { message: 'ok', stats: { a: 1 } } },
+    manifest: { ...MANIFEST, unsupportedSemantics: [{ code: 'ACME_IL', message: 'IL preserved', severity: 'warning' }] },
   });
 
   it('produces byte-identical zips for identical input', () => {
@@ -230,7 +228,7 @@ describe('buildImporterArchive: determinism', () => {
       preservation: { 'preservation/bin.dat': BINARY, 'preservation/x.txt': 'x' },
       sources: { 'sources/n/c.plc': 'C', 'sources/a.plc': 'A', 'sources/b.plc': 'B' },
       manifest: {
-        summary: { message: 'ok', stats: { a: 1 } },
+        unsupportedSemantics: [{ code: 'ACME_IL', message: 'IL preserved', severity: 'warning' }],
         sourceFingerprint: MANIFEST.sourceFingerprint,
         vendorFamily: MANIFEST.vendorFamily,
         importerVersion: MANIFEST.importerVersion,

@@ -122,7 +122,7 @@ describe('runImporterConformance', () => {
   it('fails archive-deterministic for output that depends on the clock or call count', async () => {
     let run = 0;
     await expectFailing(
-      patchedToy((result) => ({ ...result, summary: { message: `run ${(run += 1)}` } })),
+      patchedToy((result) => ({ ...result, sources: { ...result.sources, 'sources/run.plc': `run ${(run += 1)}` } })),
       ['archive-deterministic'],
     );
   });

@@ -214,8 +214,9 @@ describe('ImporterHost.run: success', () => {
       canonicalSources: ['sources/a/one.plc', 'sources/b/two.plc'],
       preservation: ['preservation/b/two.txt.rejected'],
       diagnostics: 'diagnostics.json',
-      summary: { message: 'Converted 2 file(s).', stats: { files: 2 } },
     });
+    // Not in the manifest until core's closed result schema lists it (wormhole#2).
+    expect(archive.manifest).not.toHaveProperty('summary');
     expect(resultManifestProblems(archive.manifest)).toEqual([]);
     expect(outcome.summary).toEqual({ message: 'Converted 2 file(s).', stats: { files: 2 } });
     expect(outcome.importerId).toBe('toy.text-importer');

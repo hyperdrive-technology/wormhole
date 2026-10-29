@@ -47,7 +47,6 @@ describe('buildImporterArchive manifests validate against hyperdrive-importer-re
       manifest: {
         ...BASE.manifest,
         unsupportedSemantics: [{ code: 'ACME_IL', message: 'IL preserved', severity: 'warning' }],
-        summary: { message: 'Imported 2 files.', stats: { filesImported: 2, warnings: 0 } },
       },
       sources: { 'sources/a.plc': 'A', 'sources/nested/b.plc': 'B' },
       preservation: { 'preservation/il/a.il.txt': 'LD x', 'preservation/raw.bin': new Uint8Array([0, 1]) },

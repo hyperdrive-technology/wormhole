@@ -113,9 +113,9 @@ function byteLength(content: string | Uint8Array): number {
 }
 
 /**
- * Bytes the archive will carry, before compression: every output file, the diagnostics
- * report, and the importer-supplied manifest metadata (`summary`, `unsupportedSemantics`),
- * which are serialised into `manifest.json` and so are just as unbounded as file content.
+ * Bytes the run produces, before compression: every output file, the diagnostics report,
+ * `unsupportedSemantics` (serialised into `manifest.json`) and the `summary` returned on the
+ * outcome. All are importer-supplied and so just as unbounded as file content.
  */
 function outputBytes(result: ImportResult, diagnostics: ImporterDiagnosticsReport, summary: ImportSummary): number {
   let total = Buffer.byteLength(JSON.stringify(diagnostics), 'utf8');
@@ -482,7 +482,7 @@ export class ImporterHost {
           vendorFamily: capability.vendorFamily,
           sourceFingerprint: tree.fingerprint(),
           ...(result.unsupportedSemantics ? { unsupportedSemantics: result.unsupportedSemantics } : {}),
-          summary,
+          // `summary` stays on the run outcome only until core's result schema accepts it (wormhole#2).
         },
         sources: result.sources,
         diagnostics: report,

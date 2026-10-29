@@ -278,7 +278,6 @@ export function buildImporterArchive(input: BuildImporterArchiveInput): BuiltImp
     ...(input.manifest.unsupportedSemantics && input.manifest.unsupportedSemantics.length > 0
       ? { unsupportedSemantics: input.manifest.unsupportedSemantics }
       : {}),
-    ...(input.manifest.summary ? { summary: input.manifest.summary } : {}),
   };
 
   const entries: ImporterArchiveEntry[] = [

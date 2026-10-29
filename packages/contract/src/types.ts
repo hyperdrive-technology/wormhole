@@ -38,11 +38,12 @@ export interface ImporterResultManifest {
   preservation?: string[];
   diagnostics: string;
   unsupportedSemantics?: ImporterUnsupportedSemantic[];
-  /** Additive in v1 (2026-10-28): a short human summary of the import. */
-  summary?: ImporterResultSummary;
+  // No `summary` here yet: core's hyperdrive-importer-result.v1 schema is closed
+  // (additionalProperties: false) and does not list it, so writing it would make every archive
+  // fail core's validation (GPT review on PR #1). Add it back once core's schema has it (wormhole#2).
 }
 
-/** Human-readable outcome of an import, carried in the result manifest. */
+/** Human-readable outcome of an import, returned on the SDK run outcome (not yet in the manifest, wormhole#2). */
 export interface ImporterResultSummary {
   /** One or two sentences, e.g. "Upgraded 3 files; 1 IL body preserved." */
   message: string;
@@ -104,7 +105,6 @@ export interface BuildImporterArchiveInput {
     vendorFamily: string;
     sourceFingerprint: string;
     unsupportedSemantics?: ImporterUnsupportedSemantic[];
-    summary?: ImporterResultSummary;
   };
   sources: Readonly<Record<string, string>>;
   diagnostics: ImporterDiagnosticsReport;
