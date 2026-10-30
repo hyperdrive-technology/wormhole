@@ -427,3 +427,25 @@ describe('iec61131 importer through ImporterHost', () => {
     expect(outcome.diagnostics.diagnostics.map((diagnostic) => diagnostic.code)).toEqual(['WORMHOLE_IEC_BINARY_INPUT', 'WORMHOLE_RUN_NO_SOURCES']);
   });
 });
+
+// wormhole#5: one large file is a single synchronous upgradeSource call. The importer's own
+// per-file throwIfAborted() never runs during it, so the deadline has to be checked inside.
+describe('wall-time limit on one large file', () => {
+  it('fails through ImporterHost with LIMIT_EXCEEDED instead of finishing the upgrade', async () => {
+    let now = 0;
+    // Every clock read "takes" 1 ms, so the run passes 1,000 ms after ~1,000 reads.
+    const host = new ImporterHost({ clock: () => (now += 1) });
+    host.register(iec61131UpgradeImporter);
+    const source = 'PROGRAM a\nVAR\n  x : BOOL;\nEND_VAR\nLD x\nST x\nEND_PROGRAM\n'.repeat(5_000);
+    const outcome = await host.run({
+      capabilityId: IMPORTER_ID,
+      input: treeOf({ 'big.st': source }),
+      limits: { maxWallTimeMs: 1_000 },
+    });
+    expect(outcome.status).toBe('failed');
+    expect(outcome.failure?.code).toBe('LIMIT_EXCEEDED');
+    expect(outcome.diagnostics.diagnostics.map((item) => item.code)).toContain('WORMHOLE_RUN_WALL_TIME_EXCEEDED');
+    // Stopped soon after the deadline, not after all 5,000 POUs.
+    expect(now).toBeLessThan(1_200);
+  });
+});
