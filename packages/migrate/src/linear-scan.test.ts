@@ -25,7 +25,7 @@ import {
   type UpgradeOptions,
   type UpgradeRule,
 } from './index.js';
-import { ForwardIndexOf, ForwardSearch, LineIndex, lineNumberAt } from './scan.js';
+import { findCallSites, ForwardIndexOf, ForwardSearch, LastIndexBefore, LineIndex, lineNumberAt } from './scan.js';
 
 /** Small seeded PRNG (mulberry32) so a failing case can be reproduced from its seed. */
 function prng(seed: number): () => number {
@@ -155,6 +155,23 @@ describe('scan helpers', () => {
       expect(search.from(from)?.index ?? null).toBe(fresh.exec(source)?.index ?? null);
       expect(indexOf.from(from)).toBe(source.indexOf('END_', from));
     }
+  });
+
+  it('LastIndexBefore answers like lastIndexOf, in any query order', () => {
+    const source = 'a,b,,c(d,e)f,';
+    const last = new LastIndexBefore(source, ',');
+    for (const before of [0, 1, 2, 3, 5, 9, 13, 4, 0, 13]) {
+      expect(last.before(before)).toBe(before === 0 ? -1 : source.lastIndexOf(',', before - 1));
+    }
+    expect(() => new LastIndexBefore('x', ',,')).toThrow(/single/);
+  });
+
+  it('findCallSites resumes after an accepted call and after a rejected head', () => {
+    const source = 'f(g(x)) h (y) k(';
+    const all = findCallSites(source, () => true).map((site) => site.text);
+    expect(all).toEqual(['f(g(x)', 'h (y)']);
+    const onlyG = findCallSites(source, (site) => site.name === 'g').map((site) => site.text);
+    expect(onlyG).toEqual(['g(x)']);
   });
 
   it('ForwardSearch refuses a non-global pattern', () => {

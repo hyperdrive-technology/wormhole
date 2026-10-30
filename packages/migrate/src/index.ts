@@ -31,6 +31,7 @@ export function upgradeSource(
   const preservation = new PreservationMerger(options.fileName);
 
   for (const rule of rules) {
+    options.checkpoint?.();
     const result = rule.run(source, options);
     source = result.source;
     changed ||= result.changed;

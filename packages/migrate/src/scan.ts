@@ -105,6 +105,39 @@ export class ForwardIndexOf {
 }
 
 /**
+ * `source.lastIndexOf(needle, before - 1)` restricted to single-character needles, amortised
+ * O(1) per call when `before` only grows: each call scans back only to the previous query.
+ */
+export class LastIndexBefore {
+  readonly #source: string;
+  readonly #needle: string;
+  #before = 0;
+  #found = -1;
+
+  constructor(source: string, needle: string) {
+    if (needle.length !== 1) throw new Error('LastIndexBefore needs a single character');
+    this.#source = source;
+    this.#needle = needle;
+  }
+
+  /** Index of the last `needle` strictly before `before`, or -1. */
+  before(before: number): number {
+    if (before < this.#before) {
+      this.#before = 0;
+      this.#found = -1;
+    }
+    for (let index = before - 1; index >= this.#before; index -= 1) {
+      if (this.#source[index] === this.#needle) {
+        this.#found = index;
+        break;
+      }
+    }
+    this.#before = before;
+    return this.#found;
+  }
+}
+
+/**
  * A call site `NAME(...)`: an identifier, optional whitespace, `(`, then everything up to the
  * first `)`. This is what `\bNAME\s*\([^)]*\)` matches, found without rescanning: the
  * identifier comes from a regex (linear, one attempt per word start) and the `)` from a
@@ -129,10 +162,14 @@ const CALL_HEAD = /\b([A-Za-z_][A-Za-z0-9_]*)\s*\(/g;
  * resumes after an accepted call's `)`, as a global regex would). `accept` may also inspect
  * the arguments and reject; scanning then resumes after the rejected call's `(`.
  * `checkpoint` runs every 1024 heads so a caller can stop a long scan.
+ *
+ * Many heads can share one `)` (`a( a( a( ... )`), so `accept` must not do work proportional to
+ * the argument length for every head, or the scan is quadratic again. `text` is only built
+ * for accepted sites for the same reason.
  */
 export function findCallSites(
   source: string,
-  accept: (site: CallSite) => boolean,
+  accept: (site: Omit<CallSite, 'text'>) => boolean,
   checkpoint?: () => void,
 ): CallSite[] {
   const sites: CallSite[] = [];
@@ -145,15 +182,9 @@ export function findCallSites(
     const close = closeParen.from(argsStart);
     // No `)` anywhere after this head means none after any later head either.
     if (close === -1) break;
-    const site: CallSite = {
-      start: match.index,
-      name: match[1] as string,
-      argsStart,
-      close,
-      text: source.slice(match.index, close + 1),
-    };
+    const site = { start: match.index, name: match[1] as string, argsStart, close };
     if (accept(site)) {
-      sites.push(site);
+      sites.push({ ...site, text: source.slice(site.start, close + 1) });
       head.lastIndex = close + 1;
     }
   }
