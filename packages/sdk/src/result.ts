@@ -64,3 +64,39 @@ export function importResultShapeProblems(value: unknown): string[] {
   }
   return problems;
 }
+
+/**
+ * A shallow copy of an importer's return value in which `summary` (and `summary.stats`) are
+ * plain objects whose values were each read exactly once. The host validates and serialises
+ * only this copy, so a getter that changes its answer between reads cannot slip an
+ * unvalidated value (a BigInt, an object) into `JSON.stringify` (wormhole#16).
+ *
+ * Non-records are returned unchanged for `importResultShapeProblems` to reject. May throw if
+ * a getter throws; callers treat that as an invalid result.
+ */
+export function snapshotResult(value: unknown): unknown {
+  if (!isPlainRecord(value)) return value;
+  const copy = copyFields(value, RESULT_FIELDS);
+  if (isPlainRecord(copy.summary)) {
+    const summary = copyFields(copy.summary, SUMMARY_FIELDS);
+    if (isPlainRecord(summary.stats)) summary.stats = copyFields(summary.stats, []);
+    copy.summary = summary;
+  }
+  return copy;
+}
+
+const RESULT_FIELDS = ['sources', 'diagnostics', 'preservation', 'assets', 'unsupportedSemantics', 'summary'];
+const SUMMARY_FIELDS = ['message', 'stats'];
+
+/**
+ * Own enumerable properties plus the declared `fields`, each read exactly once. Declared fields
+ * are read even when non-enumerable (a getter defined with `Object.defineProperty` is valid
+ * input); undeclared enumerable ones are kept so the shape check can still report them.
+ */
+function copyFields(source: Record<string, unknown>, fields: readonly string[]): Record<string, unknown> {
+  const copy: Record<string, unknown> = { ...source };
+  for (const field of fields) {
+    if (!(field in copy) && field in source) copy[field] = source[field];
+  }
+  return copy;
+}

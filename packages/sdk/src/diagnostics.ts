@@ -21,6 +21,11 @@ export const SdkDiagnosticCode = {
   INPUT_SYMLINK_SKIPPED: 'WORMHOLE_INPUT_SYMLINK_SKIPPED',
   INPUT_SPECIAL_FILE_SKIPPED: 'WORMHOLE_INPUT_SPECIAL_FILE_SKIPPED',
   INPUT_UNREADABLE: 'WORMHOLE_INPUT_UNREADABLE',
+  /**
+   * A file or directory was replaced (or swapped for a symbolic link) between the walk and the
+   * read. The load fails instead of reading something other than what was walked.
+   */
+  INPUT_CHANGED: 'WORMHOLE_INPUT_CHANGED',
   /** The capability does not accept this container kind (file, directory or zip). */
   INPUT_CONTAINER_UNSUPPORTED: 'WORMHOLE_INPUT_CONTAINER_UNSUPPORTED',
   RUN_ABORTED: 'WORMHOLE_RUN_ABORTED',

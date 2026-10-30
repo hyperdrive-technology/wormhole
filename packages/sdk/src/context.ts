@@ -1,4 +1,4 @@
-import { DEFAULT_UPGRADE_RULES, upgradeSource } from '@wormhole/migrate';
+import { DEFAULT_UPGRADE_RULES, upgradeSource, type UpgradeOptions, type UpgradeRule } from '@wormhole/migrate';
 
 import type {
   ImportContext,
@@ -83,15 +83,35 @@ export function createImportContext(options: CreateImportContextOptions = {}): I
     LOG_LEVELS.map((level) => [level, (message: string, fields?: LogFields) => log(level, message, fields)]),
   ) as unknown as ImporterLogger;
 
+  const throwIfAborted = (): void => {
+    checkDeadline();
+    controller.signal.throwIfAborted();
+  };
+  // upgradeSource is synchronous and can run for a long time on a large file; the host's
+  // timer cannot fire while it runs. Passing throwIfAborted as its checkpoint lets the
+  // wall-time limit and caller aborts stop it part-way (wormhole#5).
+  const migrate: MigrateToolkit = Object.freeze({
+    upgradeSource: (content: string, upgradeOptions: UpgradeOptions, rules?: UpgradeRule[]) =>
+      migrateToolkit.upgradeSource(
+        content,
+        {
+          ...upgradeOptions,
+          checkpoint: () => {
+            throwIfAborted();
+            upgradeOptions.checkpoint?.();
+          },
+        },
+        rules,
+      ),
+    defaultRules: migrateToolkit.defaultRules,
+  });
+
   const context: ImportContext = Object.freeze({
     signal: controller.signal,
     limits,
     logger: Object.freeze(logger),
-    migrate: migrateToolkit,
-    throwIfAborted: () => {
-      checkDeadline();
-      controller.signal.throwIfAborted();
-    },
+    migrate,
+    throwIfAborted,
     remainingMs: () => Math.max(0, deadline - clock()),
   });
 

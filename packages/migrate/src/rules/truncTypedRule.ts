@@ -1,5 +1,6 @@
 import type { ImporterDiagnostic } from '@wormhole/contract';
 import { truncToTyped } from '../migration-helpers.js';
+import { findCallSites, spliceRanges } from '../scan.js';
 import {
   diagnostic,
   lineNumberAt,
@@ -8,21 +9,30 @@ import {
   type UpgradeRuleResult,
 } from '../types.js';
 
-const UNtypedTruncCall = /\bTRUNC\s*\(\s*([^)]+?)\s*\)/gi;
+/**
+ * `TRUNC(<operand>)` call sites: what `/\bTRUNC\s*\(\s*([^)]+?)\s*\)/gi` matches (at least
+ * one character before the first `)`), found in linear time (wormhole#5).
+ */
+function untypedTruncCalls(source: string, options: UpgradeOptions) {
+  return findCallSites(
+    source,
+    (site) => site.name.toUpperCase() === 'TRUNC' && site.close > site.argsStart,
+    options.checkpoint,
+  );
+}
 
 export const truncTypedRule: UpgradeRule = {
   id: 'trunc-to-typed',
   tier: 'A',
   run(source, options): UpgradeRuleResult {
     const diagnostics: ImporterDiagnostic[] = [];
-    let changed = false;
-    let next = source;
+    const edits: Array<{ start: number; end: number; text: string }> = [];
 
-    if (options.apply) {
-      next = source.replace(UNtypedTruncCall, (match, _operand, offset) => {
-        const converted = truncToTyped(match);
-        if (!converted) return match;
-        changed = true;
+    for (const site of untypedTruncCalls(source, options)) {
+      const converted = truncToTyped(site.text);
+      if (!converted) continue;
+      if (options.apply) {
+        edits.push({ start: site.start, end: site.close + 1, text: converted.typedCall });
         diagnostics.push(
           diagnostic(
             'WORMHOLE_TRUNC_TYPED',
@@ -30,15 +40,10 @@ export const truncTypedRule: UpgradeRule = {
             'info',
             options,
             `Target type default: ${converted.targetType}`,
-            lineNumberAt(source, offset),
+            lineNumberAt(source, site.start),
           ),
         );
-        return converted.typedCall;
-      });
-    } else {
-      for (const match of source.matchAll(UNtypedTruncCall)) {
-        const converted = truncToTyped(match[0]);
-        if (!converted) continue;
+      } else {
         diagnostics.push(
           diagnostic(
             'WORMHOLE_TRUNC_TYPED',
@@ -46,12 +51,12 @@ export const truncTypedRule: UpgradeRule = {
             'warning',
             options,
             undefined,
-            lineNumberAt(source, match.index ?? 0),
+            lineNumberAt(source, site.start),
           ),
         );
       }
     }
 
-    return { source: next, changed, diagnostics, preservation: {} };
+    return { source: spliceRanges(source, edits), changed: edits.length > 0, diagnostics, preservation: {} };
   },
 };

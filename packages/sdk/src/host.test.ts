@@ -430,6 +430,37 @@ describe('ImporterHost.run: cancellation and time', () => {
   });
 });
 
+// wormhole#5: an importer that hands one large file to ctx.migrate.upgradeSource never gets
+// back to its own throwIfAborted() calls; the upgrade itself has to stop at the deadline.
+describe('ImporterHost.run: wall-time limit inside ctx.migrate.upgradeSource', () => {
+  it('fails with LIMIT_EXCEEDED instead of finishing the whole upgrade', async () => {
+    let now = 0;
+    let upgradeFinished = false;
+    const host = new ImporterHost({ clock: () => now });
+    host.register(
+      toyImporter({
+        import(_, ctx) {
+          const source = 'PROGRAM a\nLD x\nEND_PROGRAM\n'.repeat(2_000);
+          ctx.migrate.upgradeSource(source, {
+            sourceKind: 'st',
+            fileName: 'a.st',
+            apply: true,
+            checkpoint: () => {
+              now += 10; // each step "takes" 10 ms
+            },
+          });
+          upgradeFinished = true;
+          return validResult();
+        },
+      }),
+    );
+    const outcome = await host.run({ capabilityId: TOY_CAPABILITY_ID, input: tree({ 'a.txt': 'A' }), limits: { maxWallTimeMs: 1_000 } });
+    expectFailure(outcome, 'LIMIT_EXCEEDED', 'WORMHOLE_RUN_WALL_TIME_EXCEEDED');
+    expect(upgradeFinished).toBe(false);
+    expect(now).toBeLessThan(1_100);
+  });
+});
+
 describe('ImporterHost.run: misbehaving importers', () => {
   it.each([
     ['a synchronous throw', () => { throw new Error('parse exploded'); }, 'parse exploded'],
@@ -489,6 +520,86 @@ describe('ImporterHost.run: misbehaving importers', () => {
   ])('returns INVALID_RESULT (never rejects) for unsupportedSemantics with %s', async (_, make) => {
     const outcome = await runToy({ unsupportedSemantics: make() as never });
     expectFailure(outcome, 'INVALID_RESULT', 'WORMHOLE_RUN_INVALID_RESULT');
+  });
+
+  // wormhole#16: run() read result.summary again after validating it, so a getter that
+  // changed its answer slipped a BigInt past validation into JSON.stringify and run() rejected.
+  describe('a summary that changes between reads (wormhole#16)', () => {
+    function flipping<T>(first: T, later: unknown, firstReads = 1): () => T {
+      let reads = 0;
+      return () => (++reads <= firstReads ? first : (later as T));
+    }
+
+    it('snapshots summary.stats once: a stat getter that turns into a BigInt never rejects run()', async () => {
+      const stats = Object.defineProperty({}, 'files', { enumerable: true, get: flipping(1, 1n) });
+      const outcome = await runToy({ summary: { message: 'ok', stats } });
+      expect(outcome.status).toBe('succeeded');
+      expect(outcome.summary).toEqual({ message: 'ok', stats: { files: 1 } });
+      expect(() => JSON.stringify(outcome.summary)).not.toThrow();
+    });
+
+    it.each([
+      ['a BigInt', 1n],
+      ['an object', { not: 'a string' }],
+      ['a getter that throws', undefined],
+    ])('snapshots summary.message once: a message that turns into %s never rejects run()', async (label, later) => {
+      let reads = 0;
+      const summary = Object.defineProperty({}, 'message', {
+        enumerable: true,
+        get: () => {
+          reads += 1;
+          if (reads <= 2) return 'ok';
+          if (label === 'a getter that throws') throw new Error('boom');
+          return later;
+        },
+      });
+      const outcome = await runToy({ summary: summary as never });
+      expect(['succeeded', 'failed']).toContain(outcome.status);
+      if (outcome.status === 'failed') expect(outcome.failure?.code).toBe('INVALID_RESULT');
+      if (outcome.summary) expect(typeof outcome.summary.message).toBe('string');
+      expect(() => JSON.stringify(outcome.summary)).not.toThrow();
+    });
+
+    // GPT review on PR #17: getters defined with Object.defineProperty are non-enumerable by
+    // default, and a summary like that is valid input that succeeds on main.
+    it('keeps non-enumerable summary and stats getters that are stable', async () => {
+      const stats = Object.defineProperty({}, 'files', { enumerable: true, get: () => 3 });
+      const summary = Object.defineProperty({}, 'message', { get: () => 'ok' });
+      Object.defineProperty(summary, 'stats', { get: () => stats });
+      const outcome = await runToy({ summary: summary as never });
+      expect(outcome.status).toBe('succeeded');
+      expect(outcome.summary).toEqual({ message: 'ok', stats: { files: 3 } });
+    });
+
+    it('reads a non-enumerable getter on the result itself once', async () => {
+      let reads = 0;
+      const { summary: _enumerable, ...withoutSummary } = validResult();
+      const outcome = await runToy(() =>
+        Object.defineProperty(withoutSummary, 'summary', {
+          get: () => { reads += 1; return { message: 'from a hidden getter' }; },
+        }),
+      );
+      expect(outcome.status).toBe('succeeded');
+      expect(outcome.summary).toEqual({ message: 'from a hidden getter' });
+      expect(reads).toBe(1);
+    });
+
+    it('keeps the snapshotted summary on NO_SOURCES failures as well', async () => {
+      const stats = Object.defineProperty({}, 'files', { enumerable: true, get: flipping(0, 1n) });
+      const outcome = await runToy({ sources: {}, summary: { message: 'nothing', stats } });
+      expectFailure(outcome, 'NO_SOURCES', 'WORMHOLE_RUN_NO_SOURCES');
+      expect(outcome.summary).toEqual({ message: 'nothing', stats: { files: 0 } });
+    });
+
+    it('turns a throw while checking the result into INVALID_RESULT instead of rejecting', async () => {
+      const diagnostics = [Object.defineProperty({ code: 'X', severity: 'error' }, 'message', {
+        enumerable: true,
+        get: flipping('first', undefined, 1),
+      })];
+      Object.defineProperty(diagnostics[0], 'source', { enumerable: true, get: () => { throw new Error('boom'); } });
+      const outcome = await runToy({ diagnostics: diagnostics as never });
+      expectFailure(outcome, 'INVALID_RESULT', 'WORMHOLE_RUN_INVALID_RESULT');
+    });
   });
 
   it('returns INVALID_RESULT for unserialisable unsupportedSemantics even when the output limit is tiny', async () => {

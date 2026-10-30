@@ -4,20 +4,27 @@ export interface TruncToTypedResult {
   targetType: string;
 }
 
-const UNtypedTruncPattern = /^TRUNC\s*\(\s*([^)]+?)\s*\)$/i;
+// Only the head is a regex. The old whole-call pattern `^TRUNC\s*\(\s*([^)]+?)\s*\)$` gave
+// the same answer but backtracked quadratically on `TRUNC(a<many spaces>b)` (wormhole#5).
+const TRUNC_HEAD = /^TRUNC\s*\(/i;
 
 export function truncToTyped(
   callExpression: string,
   targetType = 'INT',
 ): TruncToTypedResult | undefined {
   const trimmed = callExpression.trim();
-  const match = trimmed.match(UNtypedTruncPattern);
-  if (!match?.[1]) {
+  const head = TRUNC_HEAD.exec(trimmed);
+  if (!head || !trimmed.endsWith(')')) {
+    return undefined;
+  }
+  // Everything between `(` and the final `)`: at least one character and no other `)`.
+  const inner = trimmed.slice(head[0].length, -1);
+  if (inner.length === 0 || inner.includes(')')) {
     return undefined;
   }
 
   const normalizedType = targetType.trim().toUpperCase();
-  const operand = match[1].trim();
+  const operand = inner.trim();
   return {
     original: trimmed,
     targetType: normalizedType,

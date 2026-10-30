@@ -22,6 +22,9 @@ describe('ilSidecarStem', () => {
     ['notes.txt', 'notes.txt'],
     ['', 'source'],
     ['.st', 'source'],
+    // wormhole#9: NFD (macOS) names come out NFC, matching checkRelativePath and the archive.
+    ['cafe\u0301.st', 'caf\u00e9'],
+    ['x/cafe\u0301/main.st', 'x/caf\u00e9/main'],
   ])('%s -> %s', (fileName, stem) => {
     expect(ilSidecarStem(fileName)).toBe(stem);
   });
@@ -40,6 +43,12 @@ describe('ilPreservationRule sidecar naming', () => {
     expect(Object.keys(y.preservation)).toEqual(['preservation/il/y/main-Main.il.txt']);
     expect(Object.values(x.preservation)[0]).toContain('LD TRUE');
     expect(Object.values(y.preservation)[0]).toContain('LD FALSE');
+  });
+
+  it('builds NFC sidecar paths for an NFD file name (wormhole#9)', () => {
+    const result = run(pou('Main', 'LD TRUE\nST A'), 'cafe\u0301.st');
+    expect(Object.keys(result.preservation)).toEqual(['preservation/il/caf\u00e9-Main.il.txt']);
+    expect(result.diagnostics[0]?.message).toContain('preservation/il/caf\u00e9-Main.il.txt');
   });
 
   it('normalises Windows separators the same way as forward slashes', () => {

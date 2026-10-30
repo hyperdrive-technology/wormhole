@@ -5,7 +5,7 @@ import { octalLiteralRule } from './rules/octalLiteralRule.js';
 import { representedVariableRule } from './rules/representedVariableRule.js';
 import { truncTypedRule } from './rules/truncTypedRule.js';
 import {
-  mergeUpgradeResults,
+  PreservationMerger,
   type UpgradeOptions,
   type UpgradeResult,
   type UpgradeRule,
@@ -28,17 +28,18 @@ export function upgradeSource(
   let source = content;
   let changed = false;
   const diagnostics: UpgradeResult['diagnostics'] = [];
-  const preservation: UpgradeResult['preservation'] = {};
+  const preservation = new PreservationMerger(options.fileName);
 
   for (const rule of rules) {
+    options.checkpoint?.();
     const result = rule.run(source, options);
     source = result.source;
     changed ||= result.changed;
     diagnostics.push(...result.diagnostics);
-    Object.assign(preservation, result.preservation);
+    diagnostics.push(...preservation.add(result.preservation));
   }
 
-  return { source, changed, diagnostics, preservation };
+  return { source, changed, diagnostics, preservation: preservation.entries };
 }
 
 export * from './types.js';
@@ -52,3 +53,12 @@ export {
   truncTypedRule,
 };
 export { matchAllInCode, replaceInCode, scanSourceSpans, type SourceSpan } from './lexical.js';
+export {
+  findCallSites,
+  ForwardIndexOf,
+  ForwardSearch,
+  LastIndexBefore,
+  LineIndex,
+  spliceRanges,
+  type CallSite,
+} from './scan.js';

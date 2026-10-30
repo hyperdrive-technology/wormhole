@@ -3,7 +3,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 
-import { upgradeSource } from './index.js';
+import { mergeUpgradeResults, upgradeSource, type UpgradeRule } from './index.js';
 
 const fixturesDir = join(dirname(fileURLToPath(import.meta.url)), '../../../fixtures/legacy');
 
@@ -61,5 +61,84 @@ END_PROGRAM
     expect(result.diagnostics.map((item) => item.code)).toEqual(
       expect.arrayContaining(['WORMHOLE_DEPRECATED_VAR_ACCESS', 'WORMHOLE_DEPRECATED_VAR_GLOBAL']),
     );
+  });
+});
+
+// wormhole#4: upgradeSource merged rule sidecars with Object.assign, so a rule (or a custom
+// rule set) that reused a path silently replaced logic an earlier rule had already moved out
+// of the source.
+describe('upgradeSource preservation sidecar collisions (wormhole#4)', () => {
+  function sidecarRule(id: string, preservation: Record<string, string>): UpgradeRule {
+    return { id, tier: 'C', run: (source) => ({ source, changed: false, diagnostics: [], preservation }) };
+  }
+  const options = { sourceKind: 'st' as const, fileName: 'a.st', apply: true };
+
+  it('keeps both sidecars when two rules write the same path, and warns', () => {
+    const result = upgradeSource('x', options, [
+      sidecarRule('first', { 'preservation/il/a-Main.il.txt': 'LD TRUE' }),
+      sidecarRule('second', { 'preservation/il/a-Main.il.txt': 'LD FALSE' }),
+    ]);
+    expect(result.preservation).toEqual({
+      'preservation/il/a-Main.il.txt': 'LD TRUE',
+      'preservation/il/a-Main.collision-2.il.txt': 'LD FALSE',
+    });
+    const warning = result.diagnostics.find((item) => item.code === 'WORMHOLE_PRESERVATION_COLLISION');
+    expect(warning).toMatchObject({ severity: 'warning', source: { path: 'a.st' } });
+    expect(warning?.message).toContain('preservation/il/a-Main.collision-2.il.txt');
+  });
+
+  // GPT review on PR #17: the archive strips leading "./", so these two are one entry.
+  it('treats ./preservation/x.txt and preservation/x.txt as a collision, like the archive does', () => {
+    const result = upgradeSource('x', options, [
+      sidecarRule('first', { './preservation/x.txt': '1' }),
+      sidecarRule('second', { 'preservation/x.txt': '2' }),
+    ]);
+    expect(Object.values(result.preservation).sort()).toEqual(['1', '2']);
+    const archiveKeys = Object.keys(result.preservation).map((key) => key.replace(/^(\.\/)+/, ''));
+    expect(new Set(archiveKeys).size).toBe(2);
+    expect(result.diagnostics.filter((item) => item.code === 'WORMHOLE_PRESERVATION_COLLISION')).toHaveLength(1);
+  });
+
+  it('treats case-only and NFC/NFD differences as collisions, like the archive does', () => {
+    const result = upgradeSource('x', options, [
+      sidecarRule('first', { 'preservation/café.txt': '1' }),
+      sidecarRule('second', { 'preservation/CAFÉ.txt': '2' }),
+      sidecarRule('third', { 'preservation/Café.txt': '3', 'preservation/café.collision-2.txt': '4' }),
+    ]);
+    expect(Object.values(result.preservation).sort()).toEqual(['1', '2', '3', '4']);
+    const keys = Object.keys(result.preservation).map((key) => key.normalize('NFC').toLowerCase());
+    expect(new Set(keys).size).toBe(4);
+  });
+
+  it('suffixes names without an extension and in nested folders', () => {
+    const result = upgradeSource('x', options, [
+      sidecarRule('first', { 'preservation/x/raw': 'a', 'preservation/.hidden': 'b' }),
+      sidecarRule('second', { 'preservation/x/raw': 'c', 'preservation/.hidden': 'd' }),
+    ]);
+    expect(result.preservation).toEqual({
+      'preservation/x/raw': 'a',
+      'preservation/.hidden': 'b',
+      'preservation/x/raw.collision-2': 'c',
+      'preservation/.hidden.collision-2': 'd',
+    });
+  });
+
+  it('mergeUpgradeResults keeps colliding sidecars too', () => {
+    const result = mergeUpgradeResults('x', [
+      { source: 'x', changed: false, diagnostics: [], preservation: { 'preservation/p.txt': 'one' } },
+      { source: 'y', changed: true, diagnostics: [], preservation: { 'preservation/p.txt': 'two' } },
+    ]);
+    expect(result.preservation).toEqual({ 'preservation/p.txt': 'one', 'preservation/p.collision-2.txt': 'two' });
+    expect(result.diagnostics.map((item) => item.code)).toEqual(['WORMHOLE_PRESERVATION_COLLISION']);
+  });
+
+  it('keeps every IL body of a file that declares one POU many times', () => {
+    const pou = (il: string) => `PROGRAM Dup\nVAR\n  A : BOOL;\nEND_VAR\n${il}\nEND_PROGRAM\n`;
+    const result = upgradeSource(`${pou('LD TRUE')}${pou('LD FALSE')}${pou('LDN A')}`, options);
+    expect(Object.values(result.preservation)).toEqual([
+      expect.stringContaining('LD TRUE'),
+      expect.stringContaining('LD FALSE'),
+      expect.stringContaining('LDN A'),
+    ]);
   });
 });

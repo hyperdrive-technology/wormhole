@@ -278,6 +278,97 @@ describe('iec61131 importer import()', () => {
     });
   });
 
+  // wormhole#9: macOS writes decomposed (NFD) names. The sidecar path was built from the raw
+  // name but checked against its NFC form, so a valid file with native IL stopped the import
+  // as an "unusable path"; and NFC/NFD twins passed the importer's raw-path collision check
+  // only to fail later in the archive builder.
+  describe('Unicode-normalised paths (wormhole#9)', () => {
+    const nfd = 'cafe\u0301';
+    const nfc = 'caf\u00e9';
+
+    it('imports an NFD-named file with native IL under NFC output and sidecar paths', async () => {
+      const result = await importFiles({ [`dir/${nfd}.st`]: il });
+      expect(codes(result)).not.toContain('WORMHOLE_IEC_UNPORTABLE_PATH');
+      expect(Object.keys(result.sources)).toEqual([`sources/dir/${nfc}.plc`]);
+      expect(Object.keys(result.preservation ?? {})).toEqual([`preservation/il/dir/${nfc}-Legacy.il.txt`]);
+      expect(result.preservation?.[`preservation/il/dir/${nfc}-Legacy.il.txt`]).toContain('LD Start');
+    });
+
+    it('succeeds through ImporterHost for an NFD-named file with native IL', async () => {
+      const host = new ImporterHost();
+      host.register(iec61131UpgradeImporter);
+      const outcome = await host.run({ capabilityId: IMPORTER_ID, input: treeOf({ [`${nfd}.st`]: il }) });
+      expect(outcome.status).toBe('succeeded');
+      const entries = unzipSync(outcome.archive!.zipBytes);
+      expect(Object.keys(entries)).toContain(`sources/${nfc}.plc`);
+      expect(strFromU8(entries[`preservation/il/${nfc}-Legacy.il.txt`]!)).toContain('LD Start');
+    });
+
+    /**
+     * The SDK's VirtualFileTree NFC-normalises on intake, but the importer accepts any tree
+     * that satisfies the interface (a host may load its own copy of the SDK). This stub hands
+     * paths through untouched, which is what exposed wormhole#9.
+     */
+    function rawTree(files: Record<string, string>): VirtualFileTree {
+      const bytes = new Map(Object.entries(files).map(([path, text]) => [path, strToU8(text)]));
+      const paths = [...bytes.keys()].sort();
+      return {
+        container: 'directory',
+        fileCount: paths.length,
+        totalBytes: [...bytes.values()].reduce((total, value) => total + value.byteLength, 0),
+        paths: () => paths,
+        has: (path: string) => bytes.has(path),
+        read: (path: string) => bytes.get(path)?.slice(),
+        head: (path: string, max: number) => bytes.get(path)?.slice(0, max),
+        pathsWithExtension: (...extensions: string[]) => paths.filter((path) => extensions.some((ext) => path.toLowerCase().endsWith(ext))),
+      } as unknown as VirtualFileTree;
+    }
+
+    async function importRaw(files: Record<string, string>): Promise<ImportResult> {
+      const handle = createImportContext();
+      try {
+        return await iec61131UpgradeImporter.import({ files: rawTree(files), capabilityId: IMPORTER_ID, options: {} }, handle.context);
+      } finally {
+        handle.dispose();
+      }
+    }
+
+    it('does not reject an NFD path handed through un-normalised by the tree', async () => {
+      const result = await importRaw({ [`${nfd}.st`]: il });
+      expect(codes(result)).not.toContain('WORMHOLE_IEC_UNPORTABLE_PATH');
+      expect(Object.keys(result.sources)).toEqual([`sources/${nfc}.plc`]);
+      expect(Object.keys(result.preservation ?? {})).toEqual([`preservation/il/${nfc}-Legacy.il.txt`]);
+    });
+
+    it('catches un-normalised NFC/NFD twins in its own collision check', async () => {
+      const result = await importRaw({ [`${nfc}.st`]: il, [`${nfd}.st`]: ilOther });
+      expect(result.sources).toEqual({});
+      expect(codes(result)).toContain('WORMHOLE_IEC_OUTPUT_COLLISION');
+    });
+
+    it('reports NFC/NFD twins as an output collision in the importer, not as an invalid result later', async () => {
+      const result = await importFiles({ [`${nfc}.st`]: il, [`${nfd}.plc`]: ilOther });
+      expect(result.sources).toEqual({});
+      expect(codes(result)).toContain('WORMHOLE_IEC_OUTPUT_COLLISION');
+      expect(result.summary.stats).toMatchObject({ sourcesLost: 1 });
+
+      const host = new ImporterHost();
+      host.register(iec61131UpgradeImporter);
+      const outcome = await host.run({ capabilityId: IMPORTER_ID, input: treeOf({ [`${nfc}.st`]: il, [`${nfd}.plc`]: ilOther }) });
+      expect(outcome.failure?.code).toBe('NO_SOURCES');
+      expect(outcome.diagnostics.diagnostics.map((diagnostic) => diagnostic.code)).toContain('WORMHOLE_IEC_OUTPUT_COLLISION');
+    });
+
+    it('treats NFD twins in different folders as different files', async () => {
+      const result = await importFiles({ [`x/${nfd}.st`]: il, [`y/${nfc}.st`]: ilOther });
+      expect(Object.keys(result.sources).sort()).toEqual([`sources/x/${nfc}.plc`, `sources/y/${nfc}.plc`]);
+      expect(Object.keys(result.preservation ?? {}).sort()).toEqual([
+        `preservation/il/x/${nfc}-Legacy.il.txt`,
+        `preservation/il/y/${nfc}-Legacy.il.txt`,
+      ]);
+    });
+  });
+
   it('stops with the abort reason when cancelled', async () => {
     const controller = new AbortController();
     controller.abort(new DOMException('stop', 'AbortError'));
@@ -334,5 +425,27 @@ describe('iec61131 importer through ImporterHost', () => {
     const outcome = await host.run({ capabilityId: IMPORTER_ID, input: VirtualFileTree.fromFile('x.st', new Uint8Array([0, 0, 0])) });
     expect(outcome.failure?.code).toBe('NO_SOURCES');
     expect(outcome.diagnostics.diagnostics.map((diagnostic) => diagnostic.code)).toEqual(['WORMHOLE_IEC_BINARY_INPUT', 'WORMHOLE_RUN_NO_SOURCES']);
+  });
+});
+
+// wormhole#5: one large file is a single synchronous upgradeSource call. The importer's own
+// per-file throwIfAborted() never runs during it, so the deadline has to be checked inside.
+describe('wall-time limit on one large file', () => {
+  it('fails through ImporterHost with LIMIT_EXCEEDED instead of finishing the upgrade', async () => {
+    let now = 0;
+    // Every clock read "takes" 1 ms, so the run passes 1,000 ms after ~1,000 reads.
+    const host = new ImporterHost({ clock: () => (now += 1) });
+    host.register(iec61131UpgradeImporter);
+    const source = 'PROGRAM a\nVAR\n  x : BOOL;\nEND_VAR\nLD x\nST x\nEND_PROGRAM\n'.repeat(5_000);
+    const outcome = await host.run({
+      capabilityId: IMPORTER_ID,
+      input: treeOf({ 'big.st': source }),
+      limits: { maxWallTimeMs: 1_000 },
+    });
+    expect(outcome.status).toBe('failed');
+    expect(outcome.failure?.code).toBe('LIMIT_EXCEEDED');
+    expect(outcome.diagnostics.diagnostics.map((item) => item.code)).toContain('WORMHOLE_RUN_WALL_TIME_EXCEEDED');
+    // Stopped soon after the deadline, not after all 5,000 POUs.
+    expect(now).toBeLessThan(1_200);
   });
 });

@@ -212,6 +212,53 @@ describe('checkRelativePath: portable mode', () => {
     expect(rejected('a\\b', true)).toMatch(/backslash/);
   });
 
+  // wormhole#12: segment length used to be measured in UTF-16 code units only, so 128 "é"
+  // plus ".plc" (132 code units, 260 UTF-8 bytes) passed, but Linux/macOS cap a name at 255 bytes.
+  describe('UTF-8 byte limit per segment (wormhole#12)', () => {
+    const utf8Bytes = (value: string) => new TextEncoder().encode(value).length;
+
+    it('rejects a multibyte segment over 255 UTF-8 bytes even though it is short in code units', () => {
+      const segment = `${'\u00e9'.repeat(128)}.plc`;
+      expect(segment.length).toBe(132);
+      expect(utf8Bytes(segment)).toBe(260);
+      expect(rejected(`sources/${segment}`, true)).toMatch(/segment .* is 260 bytes in UTF-8; the limit is 255/);
+    });
+
+    it('accepts a multibyte segment of exactly 255 UTF-8 bytes', () => {
+      // 127 "é" (2 bytes each) + "x" = 255 bytes.
+      const segment = `${'\u00e9'.repeat(127)}x`;
+      expect(utf8Bytes(segment)).toBe(MAX_PATH_SEGMENT_LENGTH);
+      expect(accepted(`dir/${segment}`, true)).toBe(`dir/${segment}`);
+    });
+
+    it('rejects one byte over the limit at a 3-byte and a 4-byte boundary', () => {
+      const threeByte = `${'\u20ac'.repeat(85)}x`; // 85 * 3 + 1 = 256
+      expect(utf8Bytes(threeByte)).toBe(256);
+      expect(rejected(threeByte, true)).toMatch(/256 bytes in UTF-8/);
+      const fourByte = '\u{1F600}'.repeat(64); // 64 * 4 = 256, but only 128 UTF-16 code units
+      expect(utf8Bytes(fourByte)).toBe(256);
+      expect(rejected(fourByte, true)).toMatch(/256 bytes in UTF-8/);
+      expect(accepted('\u{1F600}'.repeat(63), true)).toBe('\u{1F600}'.repeat(63));
+    });
+
+    it('measures bytes after NFC normalisation (NFD "e" + accent is 3 bytes, NFC "é" is 2)', () => {
+      const nfd = 'e\u0301'.repeat(127);
+      expect(utf8Bytes(nfd)).toBe(381);
+      expect(accepted(nfd, true)).toBe('\u00e9'.repeat(127));
+    });
+
+    it('rejects a lone surrogate (it has no UTF-8 encoding, so it cannot be a file name)', () => {
+      expect(rejected('a\ud800b.st', true)).toMatch(/not well-formed Unicode/);
+      expect(rejected('dir/\udc00', true)).toMatch(/not well-formed Unicode/);
+      expect(accepted('\u{1F600}.st', true)).toBe('\u{1F600}.st');
+    });
+
+    it('non-portable mode keeps the code-unit limit only', () => {
+      const segment = `${'\u00e9'.repeat(128)}.plc`;
+      expect(accepted(segment, false)).toBe(segment);
+    });
+  });
+
   it('portable mode still NFC-normalises and strips "./"', () => {
     expect(accepted('./e\u0301.st', true)).toBe('\u00e9.st');
   });
