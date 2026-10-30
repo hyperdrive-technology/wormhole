@@ -76,11 +76,27 @@ export function importResultShapeProblems(value: unknown): string[] {
  */
 export function snapshotResult(value: unknown): unknown {
   if (!isPlainRecord(value)) return value;
-  const copy: Record<string, unknown> = { ...value };
+  const copy = copyFields(value, RESULT_FIELDS);
   if (isPlainRecord(copy.summary)) {
-    const summary: Record<string, unknown> = { ...copy.summary };
-    if (isPlainRecord(summary.stats)) summary.stats = { ...summary.stats };
+    const summary = copyFields(copy.summary, SUMMARY_FIELDS);
+    if (isPlainRecord(summary.stats)) summary.stats = copyFields(summary.stats, []);
     copy.summary = summary;
+  }
+  return copy;
+}
+
+const RESULT_FIELDS = ['sources', 'diagnostics', 'preservation', 'assets', 'unsupportedSemantics', 'summary'];
+const SUMMARY_FIELDS = ['message', 'stats'];
+
+/**
+ * Own enumerable properties plus the declared `fields`, each read exactly once. Declared fields
+ * are read even when non-enumerable (a getter defined with `Object.defineProperty` is valid
+ * input); undeclared enumerable ones are kept so the shape check can still report them.
+ */
+function copyFields(source: Record<string, unknown>, fields: readonly string[]): Record<string, unknown> {
+  const copy: Record<string, unknown> = { ...source };
+  for (const field of fields) {
+    if (!(field in copy) && field in source) copy[field] = source[field];
   }
   return copy;
 }

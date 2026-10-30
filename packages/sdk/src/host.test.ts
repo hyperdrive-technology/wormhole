@@ -560,6 +560,30 @@ describe('ImporterHost.run: misbehaving importers', () => {
       expect(() => JSON.stringify(outcome.summary)).not.toThrow();
     });
 
+    // GPT review on PR #17: getters defined with Object.defineProperty are non-enumerable by
+    // default, and a summary like that is valid input that succeeds on main.
+    it('keeps non-enumerable summary and stats getters that are stable', async () => {
+      const stats = Object.defineProperty({}, 'files', { enumerable: true, get: () => 3 });
+      const summary = Object.defineProperty({}, 'message', { get: () => 'ok' });
+      Object.defineProperty(summary, 'stats', { get: () => stats });
+      const outcome = await runToy({ summary: summary as never });
+      expect(outcome.status).toBe('succeeded');
+      expect(outcome.summary).toEqual({ message: 'ok', stats: { files: 3 } });
+    });
+
+    it('reads a non-enumerable getter on the result itself once', async () => {
+      let reads = 0;
+      const { summary: _enumerable, ...withoutSummary } = validResult();
+      const outcome = await runToy(() =>
+        Object.defineProperty(withoutSummary, 'summary', {
+          get: () => { reads += 1; return { message: 'from a hidden getter' }; },
+        }),
+      );
+      expect(outcome.status).toBe('succeeded');
+      expect(outcome.summary).toEqual({ message: 'from a hidden getter' });
+      expect(reads).toBe(1);
+    });
+
     it('keeps the snapshotted summary on NO_SOURCES failures as well', async () => {
       const stats = Object.defineProperty({}, 'files', { enumerable: true, get: flipping(0, 1n) });
       const outcome = await runToy({ sources: {}, summary: { message: 'nothing', stats } });

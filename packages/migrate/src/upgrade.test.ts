@@ -87,6 +87,18 @@ describe('upgradeSource preservation sidecar collisions (wormhole#4)', () => {
     expect(warning?.message).toContain('preservation/il/a-Main.collision-2.il.txt');
   });
 
+  // GPT review on PR #17: the archive strips leading "./", so these two are one entry.
+  it('treats ./preservation/x.txt and preservation/x.txt as a collision, like the archive does', () => {
+    const result = upgradeSource('x', options, [
+      sidecarRule('first', { './preservation/x.txt': '1' }),
+      sidecarRule('second', { 'preservation/x.txt': '2' }),
+    ]);
+    expect(Object.values(result.preservation).sort()).toEqual(['1', '2']);
+    const archiveKeys = Object.keys(result.preservation).map((key) => key.replace(/^(\.\/)+/, ''));
+    expect(new Set(archiveKeys).size).toBe(2);
+    expect(result.diagnostics.filter((item) => item.code === 'WORMHOLE_PRESERVATION_COLLISION')).toHaveLength(1);
+  });
+
   it('treats case-only and NFC/NFD differences as collisions, like the archive does', () => {
     const result = upgradeSource('x', options, [
       sidecarRule('first', { 'preservation/café.txt': '1' }),

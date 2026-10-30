@@ -1,4 +1,4 @@
-import type { ImporterDiagnostic } from '@wormhole/contract';
+import { checkRelativePath, type ImporterDiagnostic } from '@wormhole/contract';
 
 import { lineNumberAt as cachedLineNumberAt } from './scan.js';
 
@@ -95,8 +95,15 @@ export class PreservationMerger {
   }
 }
 
+/**
+ * The key two sidecars collide on. Uses the archive's own path normalisation (NFC, leading
+ * `./` stripped) so `./preservation/x.txt` and `preservation/x.txt`, which become one archive
+ * entry, are caught here instead of failing the whole import later. A path the archive would
+ * reject falls back to plain NFC; the archive reports that one.
+ */
 function collisionKey(path: string): string {
-  return path.normalize('NFC').toLowerCase();
+  const checked = checkRelativePath(path, { portable: true });
+  return (checked.ok ? checked.path : path.normalize('NFC')).toLowerCase();
 }
 
 /**
