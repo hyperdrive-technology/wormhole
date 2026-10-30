@@ -53,3 +53,12 @@ export {
   truncTypedRule,
 };
 export { matchAllInCode, replaceInCode, scanSourceSpans, type SourceSpan } from './lexical.js';
+export {
+  findCallSites,
+  ForwardIndexOf,
+  ForwardSearch,
+  LastIndexBefore,
+  LineIndex,
+  spliceRanges,
+  type CallSite,
+} from './scan.js';
