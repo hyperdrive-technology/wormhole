@@ -430,6 +430,37 @@ describe('ImporterHost.run: cancellation and time', () => {
   });
 });
 
+// wormhole#5: an importer that hands one large file to ctx.migrate.upgradeSource never gets
+// back to its own throwIfAborted() calls; the upgrade itself has to stop at the deadline.
+describe('ImporterHost.run: wall-time limit inside ctx.migrate.upgradeSource', () => {
+  it('fails with LIMIT_EXCEEDED instead of finishing the whole upgrade', async () => {
+    let now = 0;
+    let upgradeFinished = false;
+    const host = new ImporterHost({ clock: () => now });
+    host.register(
+      toyImporter({
+        import(_, ctx) {
+          const source = 'PROGRAM a\nLD x\nEND_PROGRAM\n'.repeat(2_000);
+          ctx.migrate.upgradeSource(source, {
+            sourceKind: 'st',
+            fileName: 'a.st',
+            apply: true,
+            checkpoint: () => {
+              now += 10; // each step "takes" 10 ms
+            },
+          });
+          upgradeFinished = true;
+          return validResult();
+        },
+      }),
+    );
+    const outcome = await host.run({ capabilityId: TOY_CAPABILITY_ID, input: tree({ 'a.txt': 'A' }), limits: { maxWallTimeMs: 1_000 } });
+    expectFailure(outcome, 'LIMIT_EXCEEDED', 'WORMHOLE_RUN_WALL_TIME_EXCEEDED');
+    expect(upgradeFinished).toBe(false);
+    expect(now).toBeLessThan(1_100);
+  });
+});
+
 describe('ImporterHost.run: misbehaving importers', () => {
   it.each([
     ['a synchronous throw', () => { throw new Error('parse exploded'); }, 'parse exploded'],

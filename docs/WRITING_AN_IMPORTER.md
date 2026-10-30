@@ -204,7 +204,11 @@ Treat every byte of a project file as hostile.
    there.
 3. **Time.** Call `ctx.throwIfAborted()` in every loop over input-controlled data. Avoid
    regular expressions with nested quantifiers over untrusted text; they can backtrack
-   exponentially.
+   exponentially. Lazy scans to a terminator (`HEAD[\s\S]*?TAIL`, `\([^)]*\)`) and
+   `source.slice(0, offset)` per match are quadratic on input with many heads and no tail;
+   `@wormhole/migrate`'s `scan.ts` has linear helpers. `ctx.migrate.upgradeSource()` already
+   checks the deadline between rules and inside its scans; a custom rule should call
+   `options.checkpoint?.()` in its own long loops.
 4. **Parsers.** Disable external entities and DTD processing in XML parsers (XXE). Never
    `eval`, `new Function` or `require` anything derived from input.
 5. **Archives.** Do not expand nested archives automatically. If you must, use

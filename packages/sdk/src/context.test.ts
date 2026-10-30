@@ -29,6 +29,30 @@ describe('createImportContext', () => {
     handle.dispose();
   });
 
+  // wormhole#5: ctx.migrate.upgradeSource is synchronous, so only a checkpoint inside it can
+  // stop a long upgrade at the wall-time limit.
+  it('stops ctx.migrate.upgradeSource part-way once the deadline passes', () => {
+    let now = 0;
+    const handle = createImportContext({ limits: { maxWallTimeMs: 100 }, clock: () => now });
+    const source = 'PROGRAM a\nLD x\nEND_PROGRAM\n'.repeat(1_000);
+    let ownCheckpoints = 0;
+    const run = () =>
+      handle.context.migrate.upgradeSource(source, {
+        sourceKind: 'st',
+        fileName: 'a.st',
+        apply: true,
+        checkpoint: () => {
+          ownCheckpoints += 1;
+          if (ownCheckpoints === 20) now = 101;
+        },
+      });
+    expect(run).toThrow(expect.objectContaining({ name: 'TimeoutError' }));
+    // Stopped at the first checkpoint after the deadline, not after all 1,000 POUs.
+    expect(ownCheckpoints).toBe(20);
+    expect(handle.timedOut()).toBe(true);
+    handle.dispose();
+  });
+
   it('forwards an external abort with its reason', () => {
     const controller = new AbortController();
     const handle = createImportContext({ signal: controller.signal });
