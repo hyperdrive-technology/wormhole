@@ -34,9 +34,14 @@ export function scanSourceSpans(source: string): SourceSpan[] {
     const found = source.indexOf(closer, from);
     return found === -1 ? source.length : found + closer.length;
   };
+  // A global regex searched from `from`: `source.slice(from).search(...)` copied
+  // the rest of the input for every line comment, which is O(n^2) on `// c\n` repeated
+  // (wormhole#5).
+  const lineBreak = /[\r\n]/g;
   const endOfLine = (from: number): number => {
-    const found = source.slice(from).search(/[\r\n]/);
-    return found === -1 ? source.length : from + found;
+    lineBreak.lastIndex = from;
+    const found = lineBreak.exec(source);
+    return found === null ? source.length : found.index;
   };
   const endOfString = (quote: string, from: number): number => {
     let cursor = from + 1;

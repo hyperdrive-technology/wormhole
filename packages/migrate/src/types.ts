@@ -1,10 +1,18 @@
 import type { ImporterDiagnostic } from '@wormhole/contract';
 
+import { lineNumberAt as cachedLineNumberAt } from './scan.js';
+
 export interface UpgradeOptions {
   sourceKind: 'plc' | 'st';
   fileName: string;
   /** When false, emit diagnostics without mutating source text. */
   apply: boolean;
+  /**
+   * Called between rules and regularly inside long scans. Throw from it to stop the upgrade:
+   * `upgradeSource` is synchronous, so this is the only way a wall-time limit or an abort can
+   * interrupt it (wormhole#5). `ImportContext.migrate` passes `ctx.throwIfAborted`.
+   */
+  checkpoint?: () => void;
 }
 
 export interface UpgradeRuleResult {
@@ -125,6 +133,23 @@ export function diagnostic(
   };
 }
 
+/**
+ * 1-based line of `index`: `source.slice(0, index).split('\n').length`, but amortised
+ * O(log lines) per call, so a rule that reports a diagnostic per match stays linear (wormhole#5).
+ */
 export function lineNumberAt(source: string, index: number): number {
-  return source.slice(0, index).split('\n').length;
+  return cachedLineNumberAt(source, index);
+}
+
+/**
+ * Wraps `options.checkpoint` so a loop can call it on every step but it only runs every
+ * `every` steps (checkpoints read the clock, which is not free).
+ */
+export function checkpointEvery(options: UpgradeOptions, every = 1024): () => void {
+  const checkpoint = options.checkpoint;
+  if (!checkpoint) return () => {};
+  let steps = 0;
+  return () => {
+    if (++steps % every === 0) checkpoint();
+  };
 }

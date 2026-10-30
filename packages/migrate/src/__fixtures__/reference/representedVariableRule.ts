@@ -40,7 +40,9 @@ export const representedVariableRule: UpgradeRule = {
       );
 
       if (options.apply) {
-        next = next.replace(match[0], alias.declaration);
+        // Deliberate change (see README): replace this match in place, not the first identical text.
+        const at = (match.index ?? 0) + next.length - source.length;
+        next = `${next.slice(0, at)}${alias.declaration}${next.slice(at + match[0].length)}`;
         changed = true;
       }
     }

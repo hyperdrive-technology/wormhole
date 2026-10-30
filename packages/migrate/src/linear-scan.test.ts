@@ -108,6 +108,9 @@ describe('linear rules report exactly what the old regex rules reported (wormhol
     ['a declaration identical to an earlier mid-line one', 'PROGRAM p\nVAR\n  AT %IX0.0 : BOOL;\nEND_VAR\nEND_PROGRAM'],
     ['an alias name embedded in a longer identifier', 'VAR\nXIo_IX0_0 AT %IX0.0 : BOOL;\nEND_VAR\nx := %IX0.0;'],
     ['an AT that starts the next identifier', 'VAR\nx ATIo_IX0_0 AT %Q0 : BOOL;\nEND_VAR\nx := %IX0.0;'],
+    ['a repeated nameless declaration', 'VAR\nAT %IX0.0 : BOOL;\n  AT %IX0.0 : BOOL;\nEND_VAR'],
+    ['an alias suffix after an earlier Io_ in the same word', 'VAR\nIo_AIo_IX0_0 AT %Q0 : BOOL;\nEND_VAR\nx := %IX0.0;'],
+    ['many unclosed comments and strings', "(* a (* b // c\n' d \" e { f /* g"],
   ])('handles %s the same way', (_, source) => {
     for (const [, rule, reference] of RULE_PAIRS) {
       for (const apply of [true, false]) {
@@ -115,6 +118,17 @@ describe('linear rules report exactly what the old regex rules reported (wormhol
         expect(rule.run(source, options)).toEqual(reference.run(source, options));
       }
     }
+  });
+});
+
+describe('representedVariableRule replaces each nameless declaration in place (wormhole#5)', () => {
+  it('rewrites a repeated declaration twice instead of re-aliasing the first one', () => {
+    const result = representedVariableRule.run('VAR\nAT %IX0.0 : BOOL;\nAT %IX0.0 : BOOL;\nEND_VAR', {
+      sourceKind: 'st',
+      fileName: 'r.st',
+      apply: true,
+    });
+    expect(result.source).toBe('VAR\nIo_IX0_0 AT %IX0.0 : BOOL;\nIo_IX0_0 AT %IX0.0 : BOOL;\nEND_VAR');
   });
 });
 
