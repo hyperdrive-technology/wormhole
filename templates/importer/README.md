@@ -68,16 +68,24 @@ the public Wormhole repository:
 ```json
 "dependencies": {
   "@wormhole/sdk": "github:hyperdrive-technology/wormhole#sdk-v0.1.0&path:/packages/sdk"
-},
-"pnpm": { "onlyBuiltDependencies": ["@wormhole/sdk"] }
+}
+```
+
+```yaml
+# pnpm-workspace.yaml
+allowBuilds:
+  '@wormhole/sdk@git+https://github.com/hyperdrive-technology/wormhole.git': true
+  esbuild: false
 ```
 
 - `#sdk-v0.1.0` is a release tag. A commit SHA also works; `#main` works but moves.
 - `&path:/packages/sdk` selects the SDK inside the monorepo.
-- `onlyBuiltDependencies` is required. pnpm fetches the repository, installs its workspace,
-  and runs the SDK's `prepare` script to build `dist/`. pnpm 10 refuses to run a git-hosted
-  dependency's build scripts unless the package is allowlisted
-  (`ERR_PNPM_GIT_DEP_PREPARE_NOT_ALLOWED`).
+- The `allowBuilds` entry is required. pnpm fetches the repository, installs its workspace,
+  and runs the SDK's `prepare` script to build `dist/`. pnpm 12 refuses to run a git-hosted
+  dependency's build scripts unless `pnpm-workspace.yaml` approves it
+  (`ERR_PNPM_GIT_DEP_PREPARE_NOT_ALLOWED`). The key is the repository URL without a commit,
+  so it survives ref changes; the bare name `@wormhole/sdk` does not match a git-hosted
+  package. pnpm 11+ ignores the old `package.json` `"pnpm": { "onlyBuiltDependencies" }`.
 - `pnpm-lock.yaml` records the resolved commit. Commit it, so CI and every clone build
   against exactly the same SDK.
 - Wormhole is public, so no token is needed, even when your importer repository is private.
@@ -95,10 +103,10 @@ pnpm test        # vitest: unit tests + conformance suite
 pnpm build       # tsup → dist/index.js (the manifest's "entry")
 ```
 
-`pnpm-workspace.yaml` is not needed. In `package.json`, `pnpm.onlyBuiltDependencies`
-lets pnpm build the GitHub-hosted SDK (see above). `pnpm.ignoredBuiltDependencies` skips
-esbuild's optional install script (tsup works without it) and keeps pnpm from warning
-about it.
+`pnpm-workspace.yaml` holds the pnpm settings (pnpm 11+ no longer reads the `package.json`
+`"pnpm"` field): `allowBuilds` lets pnpm build the GitHub-hosted SDK (see above) and skips
+esbuild's optional install script (`esbuild: false`; tsup works without it). pnpm 12 fails
+an install on any build script that is neither approved nor denied there.
 
 ## Conformance in CI
 

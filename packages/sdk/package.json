@@ -63,7 +63,7 @@
   },
   "license": "MIT",
   "engines": {
-    "node": ">=26"
+    "node": ">=26.13.0"
   },
   "repository": {
     "type": "git",

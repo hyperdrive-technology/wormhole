@@ -1,0 +1,6 @@
+# actionlint config: boat.dev runner labels (https://docs.boat.dev/ci.md).
+self-hosted-runner:
+  labels:
+    - boat-small
+    - boat
+    - boat-large

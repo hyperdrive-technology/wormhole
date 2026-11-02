@@ -259,21 +259,30 @@ dependency:
 {
   "dependencies": {
     "@wormhole/sdk": "github:hyperdrive-technology/wormhole#sdk-v0.1.0&path:/packages/sdk"
-  },
-  "pnpm": { "onlyBuiltDependencies": ["@wormhole/sdk"] }
+  }
 }
 ```
 
-How it works with pnpm 10.33.2:
+```yaml
+# pnpm-workspace.yaml
+allowBuilds:
+  '@wormhole/sdk@git+https://github.com/hyperdrive-technology/wormhole.git': true
+  esbuild: false
+```
+
+How it works with pnpm 12.16.1:
 
 1. pnpm downloads the repository at the ref (`#sdk-v0.1.0`; a commit SHA also works, and
    `#main` works but moves) and selects `packages/sdk` (`&path:/packages/sdk`).
 2. It runs `pnpm install` for Wormhole's workspace inside that copy, so the SDK's internal
    `workspace:*` dependencies resolve, then runs the SDK's `prepare` script, which builds
    `dist/` and bundles `@wormhole/contract` and `@wormhole/migrate` into it.
-3. pnpm 10 refuses to run a git-hosted dependency's build scripts unless the consumer lists
-   it in `onlyBuiltDependencies` (`ERR_PNPM_GIT_DEP_PREPARE_NOT_ALLOWED`), so that entry is
-   required.
+3. pnpm 12 refuses to run a git-hosted dependency's build scripts unless the consumer's
+   `pnpm-workspace.yaml` approves it in `allowBuilds`
+   (`ERR_PNPM_GIT_DEP_PREPARE_NOT_ALLOWED`), so that entry is required. The key is the
+   repository URL without a commit (it survives ref changes); the bare name `@wormhole/sdk`
+   never matches a git-hosted package. pnpm 11+ ignores the pnpm 10 form,
+   `package.json` `"pnpm": { "onlyBuiltDependencies": [...] }`.
 4. `pnpm-lock.yaml` records the resolved commit. Commit it: CI and every clone then build
    against exactly the same SDK.
 

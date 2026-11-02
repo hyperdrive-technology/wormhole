@@ -1,4 +1,5 @@
 import { execFileSync } from 'node:child_process';
+import { chmodSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { chmod, mkdir, mkdtemp, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -56,7 +57,31 @@ function expectFatal(result: TreeLoadResult, code: string): void {
   expect(codes(result)).toContain(code);
 }
 
-const isRoot = typeof process.getuid === 'function' && process.getuid() === 0;
+/**
+ * True when chmod 000 does not stop this process from reading a file, so the
+ * "unreadable" tests cannot create an unreadable file. A uid check is not enough:
+ * boat.dev CI sandboxes run as a non-root `user` that can still read mode-000
+ * files (CAP_DAC_OVERRIDE or a permissive filesystem), which failed both tests
+ * there while they passed on GitHub-hosted runners. So probe the real behaviour.
+ */
+function permissionsNotEnforced(): boolean {
+  const dir = mkdtempSync(join(tmpdir(), 'wormhole-sdk-perm-probe-'));
+  const probe = join(dir, 'probe');
+  try {
+    writeFileSync(probe, 'x');
+    chmodSync(probe, 0o000);
+    try {
+      readFileSync(probe);
+      return true;
+    } catch {
+      return false;
+    }
+  } finally {
+    chmodSync(probe, 0o600);
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+const cannotMakeUnreadable = permissionsNotEnforced();
 
 describe('loadInputFromFile', () => {
   it('loads one file named by its base name (container file)', async () => {
@@ -110,7 +135,7 @@ describe('loadInputFromFile', () => {
     expectFatal(await loadInputFromFile(join(root, 'link.st')), SdkDiagnosticCode.INPUT_SYMLINK_SKIPPED);
   });
 
-  it.skipIf(isRoot)('reports an unreadable file without throwing', async () => {
+  it.skipIf(cannotMakeUnreadable)('reports an unreadable file without throwing', async () => {
     const path = await put('secret.st', 'x');
     await chmod(path, 0o000);
     expectFatal(await loadInputFromFile(path), SdkDiagnosticCode.INPUT_UNREADABLE);
@@ -196,7 +221,7 @@ describe('loadInputFromDirectory', () => {
     expectFatal(await loadInputFromDirectory(await put('file.st', 'x')), SdkDiagnosticCode.INPUT_UNREADABLE);
   });
 
-  it.skipIf(isRoot)('reports an unreadable sub-directory without throwing', async () => {
+  it.skipIf(cannotMakeUnreadable)('reports an unreadable sub-directory without throwing', async () => {
     await put('locked/inner.st', 'x');
     await chmod(join(root, 'locked'), 0o000);
     expectFatal(await loadInputFromDirectory(root), SdkDiagnosticCode.INPUT_UNREADABLE);

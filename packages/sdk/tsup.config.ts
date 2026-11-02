@@ -15,17 +15,19 @@ const bundled = ['@wormhole/contract', '@wormhole/migrate'];
  * Installing straight from GitHub (no npm publish yet, Des 2026-10-29):
  *
  *   "@wormhole/sdk": "github:hyperdrive-technology/wormhole#<ref>&path:/packages/sdk"
- *   "pnpm": { "onlyBuiltDependencies": ["@wormhole/sdk"] }
+ *   + pnpm-workspace.yaml  allowBuilds: { '@wormhole/sdk@git+https://github.com/hyperdrive-technology/wormhole.git': true }
  *
- * What pnpm 10.33.2 actually does with that (verified 2026-10-29; scripts/verify-template.sh
- * re-checks it in CI):
+ * What pnpm does with that (verified with 10.33.2 on 2026-10-29 and 12.16.1 on 2026-11-03;
+ * scripts/verify-template.sh re-checks it in CI):
  * - It fetches the whole repository, finds pnpm-workspace.yaml at its root and runs
  *   `pnpm install` for the workspace there, so `workspace:*` dependencies resolve inside
  *   the fetched copy.
  * - It then runs this package's `prepare` script (`pnpm run build`) and packs
  *   `packages/sdk` with the freshly built `dist/`.
- * - pnpm 10 refuses to run a git-hosted dependency's build scripts unless the consumer
- *   lists the package in `onlyBuiltDependencies` (ERR_PNPM_GIT_DEP_PREPARE_NOT_ALLOWED).
+ * - pnpm refuses to run a git-hosted dependency's build scripts unless the consumer
+ *   approves it (ERR_PNPM_GIT_DEP_PREPARE_NOT_ALLOWED): pnpm 12 by repository URL in
+ *   pnpm-workspace.yaml `allowBuilds` (the bare package name never matches a git-hosted
+ *   package); pnpm 10 used package.json `pnpm.onlyBuiltDependencies`, which pnpm 11+ ignores.
  * - The consumer's lockfile pins the resolved commit.
  *
  * Gotcha (found in CI 2026-10-29): pnpm builds git dependencies inside its store. On GitHub

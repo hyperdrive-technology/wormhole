@@ -1,3 +1,9 @@
 packages:
   - 'apps/*'
   - 'packages/*'
+
+# pnpm 12 fails an install on any dependency build script not approved here
+# (ERR_PNPM_IGNORED_BUILDS). esbuild (tsup/vite/vitest) runs a postinstall that checks
+# its platform binary.
+allowBuilds:
+  esbuild: true
