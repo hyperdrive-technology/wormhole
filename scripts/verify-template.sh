@@ -54,12 +54,25 @@ node -e '
   if (!/^github:hyperdrive-technology\/wormhole#[^&]+&path:\/packages\/sdk$/.test(pkg.dependencies["@wormhole/sdk"])) {
     throw new Error(`template must depend on the GitHub subdirectory form, got ${pkg.dependencies["@wormhole/sdk"]}`);
   }
-  if (!pkg.pnpm?.onlyBuiltDependencies?.includes("@wormhole/sdk")) {
-    throw new Error("template must list @wormhole/sdk in pnpm.onlyBuiltDependencies");
+  if (pkg.pnpm !== undefined) {
+    throw new Error("template must not use the package.json \"pnpm\" field (pnpm 11+ ignores it); settings go in pnpm-workspace.yaml");
   }
   pkg.dependencies["@wormhole/sdk"] = spec;
   fs.writeFileSync(file, JSON.stringify(pkg, null, 2) + "\n");
 ' "$project/package.json" "git+file://$repo_root#$head_sha&path:/packages/sdk"
+
+# pnpm 12 runs a git dependency's `prepare` only when pnpm-workspace.yaml approves it by
+# repository URL (no commit). Point the template's GitHub approval at this checkout.
+github_key="'@wormhole/sdk@git+https://github.com/hyperdrive-technology/wormhole.git': true"
+grep -Fq "  $github_key" "$project/pnpm-workspace.yaml" || {
+  echo "verify-template: templates/importer/pnpm-workspace.yaml must contain: allowBuilds: $github_key" >&2
+  exit 1
+}
+node -e '
+  const fs = require("node:fs");
+  const [file, from, to] = process.argv.slice(1);
+  fs.writeFileSync(file, fs.readFileSync(file, "utf8").replace(from, to));
+' "$project/pnpm-workspace.yaml" "$github_key" "'@wormhole/sdk@git+file://$repo_root': true"
 
 # The work dir is outside the repository, so pnpm cannot pick up Wormhole's
 # pnpm-workspace.yaml; the project installs exactly as it would in its own repo.

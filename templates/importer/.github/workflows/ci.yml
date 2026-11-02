@@ -20,11 +20,11 @@ jobs:
       - uses: actions/checkout@v4
 
       - uses: pnpm/action-setup@v4
-        # Version comes from package.json "packageManager" (pnpm@10.33.2).
+        # Version comes from package.json "packageManager" (pnpm@12.16.1).
 
       - uses: actions/setup-node@v4
         with:
-          node-version: 26
+          node-version: 26.13.0
           cache: pnpm
 
       # @wormhole/sdk comes from GitHub (see README "Getting @wormhole/sdk"); the lockfile

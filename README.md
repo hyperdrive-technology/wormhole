@@ -35,7 +35,7 @@ wormhole/
 
 ## Quick start
 
-Requires Node 26 and pnpm 10.33.2.
+Requires Node 26.13.0 and pnpm 12.16.1 (`packageManager`).
 
 ```bash
 pnpm install

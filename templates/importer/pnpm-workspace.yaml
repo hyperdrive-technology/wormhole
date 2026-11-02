@@ -1,0 +1,10 @@
+# pnpm 11+ reads its settings from this file; the package.json "pnpm" field is ignored.
+#
+# @wormhole/sdk is a git-hosted dependency that builds its dist/ in a `prepare`
+# script. pnpm 12 refuses to run it (ERR_PNPM_GIT_DEP_PREPARE_NOT_ALLOWED) unless it
+# is approved here. A git-hosted package is matched by its repository URL without a
+# commit; the bare name `@wormhole/sdk` never matches. Keep this key when you change
+# the ref in package.json. esbuild's postinstall is not needed.
+allowBuilds:
+  '@wormhole/sdk@git+https://github.com/hyperdrive-technology/wormhole.git': true
+  esbuild: false

@@ -25,15 +25,7 @@
   },
   "license": "MIT",
   "engines": {
-    "node": ">=26"
+    "node": ">=26.13.0"
   },
-  "packageManager": "pnpm@10.33.2",
-  "pnpm": {
-    "onlyBuiltDependencies": [
-      "@wormhole/sdk"
-    ],
-    "ignoredBuiltDependencies": [
-      "esbuild"
-    ]
-  }
+  "packageManager": "pnpm@12.16.1"
 }
