@@ -1,5 +1,6 @@
 # Pre-1.0 CI policy (Des, 2026-11-03): nothing runs automatically (no push/schedule triggers).
-# PR jobs run only when the PR has the `ci` label (every push then runs), or on demand with
+# PR jobs run only when the PR has the `ci` label (adding it starts a run; every push then runs),
+# or on demand with
 # `gh workflow run <this file> --ref <branch>` (~/dev/hyperdrive/scripts/ci-run.sh). Minor changes
 # are checked locally instead and recorded with ~/dev/hyperdrive/scripts/ci-local-status.sh, which
 # also satisfies required checks whose jobs were skipped. Policy: ~/dev/hyperdrive/AGENTS.md.
@@ -7,17 +8,18 @@ name: CI
 
 on:
   pull_request:
+    types: [opened, synchronize, reopened, labeled]
   workflow_dispatch:
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.event.action != 'labeled' || github.event.label.name == 'ci' }}
 
 permissions:
   contents: read
 
 jobs:
   check:
-    if: github.event_name != 'pull_request' || contains(github.event.pull_request.labels.*.name, 'ci')
+    if: github.event_name != 'pull_request' || (contains(github.event.pull_request.labels.*.name, 'ci') && (github.event.action != 'labeled' || github.event.label.name == 'ci'))
     name: typecheck, test, build
     runs-on: boat
     timeout-minutes: 20
