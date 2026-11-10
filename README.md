@@ -46,9 +46,12 @@ pnpm --filter @wormhole/iec61131-upgrade exec wormhole upgrade \
   --input fixtures/legacy/tier-a-legacy.plc \
   --output /tmp/upgraded.plc
 
-pnpm test
-pnpm typecheck
+scripts/install-hooks.sh      # once: pre-push runs scripts/dev-check.sh fast
+scripts/dev-check.sh          # fast: typecheck + tests of what you touched and its dependents
+scripts/dev-check.sh full     # everything CI runs (typecheck, test, build, packed-template check)
 ```
+
+[TESTING.md](TESTING.md) has the check ladder, what each changed path selects, and timings.
 
 `pnpm test:compile-gate` also compiles the upgraded fixtures with the Hyperdrive compiler. It needs a Hyperdrive core checkout at `../core` or at `HYPERDRIVE_CORE_DIR`, and skips otherwise.
 

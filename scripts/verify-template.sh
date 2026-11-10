@@ -31,9 +31,10 @@ trap cleanup EXIT
 step() {
   local label="$1"
   shift
-  printf '==> %s\n' "$label"
-  local status=0
+  printf '==> %s' "$label"
+  local status=0 started=$SECONDS
   "$@" >"$log_file" 2>&1 || status=$?
+  printf ' (%ds)\n' "$((SECONDS - started))"
   if [[ $status -ne 0 ]]; then
     cat "$log_file" >&2
     printf 'verify-template: "%s" failed (exit %d)\n' "$label" "$status" >&2
@@ -79,8 +80,12 @@ node -e '
 cd "$project"
 # A store path containing `node_modules`, like GitHub Actions' pnpm setup, so the SDK's
 # prepare build is checked under the conditions that once broke it (see the comment in
-# packages/sdk/tsup.config.ts).
-step 'pnpm install (fetches and builds @wormhole/sdk)' env CI=true pnpm install --no-frozen-lockfile --store-dir "$work_dir/node_modules/.pnpm-store"
+# packages/sdk/tsup.config.ts). The store persists between runs (gitignored, under the repo's
+# own node_modules/.cache): a fresh store re-downloaded the template's whole dependency tree
+# every run (~11 s of the ~14 s). pnpm keys a git dependency by commit, so each new HEAD still
+# gets a fresh fetch + `prepare` build of the SDK; a re-run on the same commit reuses it.
+store_dir="${WORMHOLE_TEMPLATE_STORE:-$repo_root/node_modules/.cache/verify-template/node_modules/.pnpm-store}"
+step 'pnpm install (fetches and builds @wormhole/sdk)' env CI=true pnpm install --no-frozen-lockfile --store-dir "$store_dir"
 [[ -f node_modules/@wormhole/sdk/dist/index.js ]] || { echo 'verify-template: @wormhole/sdk was installed without dist/' >&2; exit 1; }
 # contract and migrate must be bundled (JS and types): consumers cannot resolve them.
 if grep -rlE "from ['\"]@wormhole/(contract|migrate)['\"]" node_modules/@wormhole/sdk/dist; then

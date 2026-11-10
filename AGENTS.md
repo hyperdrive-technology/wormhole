@@ -20,7 +20,9 @@ Import/migration layer for Hyperdrive: external or legacy PLC source → Edition
 ```bash
 cd wormhole && pnpm install
 pnpm dev                    # wormhole-ui on :3001
-pnpm test                   # all package tests
+scripts/dev-check.sh        # L1 fast: what the diff touches (+ dependents); `push` / `full` — see TESTING.md
+scripts/dev-check.sh full   # everything ci.yml runs; writes .dev-check/last.json for ci-local-status.sh
+pnpm test                   # all package tests (packages in parallel)
 pnpm test:compile-gate      # upgraded fixtures → Hyperdrive compiler (needs ../core or HYPERDRIVE_CORE_DIR; skips otherwise)
 HYPERDRIVE_CORE_DIR=../core pnpm test:schema-sync   # contract schemas identical to core's docs/schemas/ (path relative to repo root; missing dir fails)
 ```

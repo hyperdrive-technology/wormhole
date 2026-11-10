@@ -9,3 +9,6 @@ coverage/
 .env
 .env.*
 .worktrees/
+
+# dev-check results (scripts/dev-check.sh → .dev-check/last.json)
+.dev-check/
