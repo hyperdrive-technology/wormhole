@@ -137,11 +137,21 @@ describe('scan helpers', () => {
     for (let seed = 1; seed <= 200; seed += 1) {
       const source = randomSource(prng(seed), 80);
       const lines = new LineIndex(source);
+      // Reference: 1 + newlines in source[0, offset), counted incrementally. One array
+      // comparison per seed instead of two `expect` calls per offset (~130k calls, 360 ms);
+      // the assertions are the same and a mismatch still shows the failing offset.
+      const expected: number[] = [];
+      const fromIndex: number[] = [];
+      const fromHelper: number[] = [];
+      let line = 1;
       for (let offset = 0; offset <= source.length; offset += 1) {
-        const expected = source.slice(0, offset).split('\n').length;
-        expect(lines.lineAt(offset)).toBe(expected);
-        expect(lineNumberAt(source, offset)).toBe(expected);
+        if (offset > 0 && source[offset - 1] === '\n') line += 1;
+        expected.push(line);
+        fromIndex.push(lines.lineAt(offset));
+        fromHelper.push(lineNumberAt(source, offset));
       }
+      expect(fromIndex, `LineIndex, seed ${seed}`).toEqual(expected);
+      expect(fromHelper, `lineNumberAt, seed ${seed}`).toEqual(expected);
     }
   });
 

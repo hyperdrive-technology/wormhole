@@ -1,17 +1,20 @@
-# Pre-1.0 CI policy (Des, 2026-11-03): nothing runs automatically (no push/schedule triggers).
-# PR jobs run only when the PR has the `ci` label (adding it starts a run; every push then runs).
-# Every event on a `ci` PR runs in full, adding an unrelated label included: a skipped run would
-# publish the required check names as skipped (= passing) and could mask a failure (GPT review,
-# holodeck-sdk#45 / wormhole#26).
-# or on demand with
-# `gh workflow run <this file> --ref <branch>` (~/dev/hyperdrive/scripts/ci-run.sh). Minor changes
-# are checked locally instead and recorded with ~/dev/hyperdrive/scripts/ci-local-status.sh, which
-# also satisfies required checks whose jobs were skipped. Policy: ~/dev/hyperdrive/AGENTS.md.
+# Pre-1.0 CI policy (Des, 2026-11-03; dev-loop shift-left 2026-11-11): nothing runs
+# automatically. PR jobs run only on a `labeled` event of a PR that has the `ci` label:
+# adding `ci` (or any label to a `ci` PR) starts one run; pushes do NOT re-run. Heavy CI is
+# run once, by whoever merges, on the final reviewed head of a major PR
+# (~/dev/hyperdrive/scripts/ci-run.sh re-labels to trigger it). A push after that leaves the
+# new head without check runs, which blocks merge until CI is triggered again.
+# Every event on a `ci` PR runs in full, adding an unrelated label included: a skipped run
+# would publish the required check names as skipped (= passing) and could mask a failure
+# (GPT review, holodeck-sdk#45 / wormhole#26).
+# Minor changes are checked locally instead: `scripts/dev-check.sh full` runs these same
+# commands (scripts/dev-check.test.mjs pins the two lists) and writes .dev-check/last.json,
+# which ~/dev/hyperdrive/scripts/ci-local-status.sh posts as `ci/local`. Ladder: TESTING.md.
 name: CI
 
 on:
   pull_request:
-    types: [opened, synchronize, reopened, labeled]
+    types: [labeled]
   workflow_dispatch:
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -71,6 +74,10 @@ jobs:
         if: steps.scope.outputs.run == 'true'
         run: pnpm install --frozen-lockfile
 
+      # Root scripts run every package in parallel (pnpm -r --parallel), not in topological
+      # order: typecheck, tests and builds resolve sibling packages from source (tsconfig paths /
+      # workspace-aliases.ts / tsup aliases), never from a sibling's dist/. A from-scratch
+      # parallel build produced byte-identical dist/ to the topological one (2026-11-11).
       - name: Typecheck
         if: steps.scope.outputs.run == 'true'
         run: pnpm typecheck
@@ -81,6 +88,10 @@ jobs:
       - name: Test
         if: steps.scope.outputs.run == 'true'
         run: pnpm test
+
+      - name: dev-check self-tests (selection logic + this workflow's command list)
+        if: steps.scope.outputs.run == 'true'
+        run: node --test "scripts/*.test.mjs"
 
       - name: Build
         if: steps.scope.outputs.run == 'true'

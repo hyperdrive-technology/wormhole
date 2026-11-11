@@ -1,0 +1,10 @@
+#!/usr/bin/env bash
+# L1 gate before every push: scripts/dev-check.sh fast (only what the diff touches).
+# Skip for WIP / limit-lockout checkpoints: HYPERDRIVE_SKIP_HOOKS=1 git push ...
+# There is deliberately no pre-commit hook: a checkpoint commit must never be blocked.
+set -euo pipefail
+if [[ "${HYPERDRIVE_SKIP_HOOKS:-}" == "1" ]]; then
+  echo "pre-push: HYPERDRIVE_SKIP_HOOKS=1, skipping dev-check" >&2
+  exit 0
+fi
+exec "$(git rev-parse --show-toplevel)/scripts/dev-check.sh" fast
