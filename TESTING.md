@@ -76,7 +76,35 @@ build ever needs a sibling's `dist/`, go back to `pnpm -r run build`.
 
 ## Timings
 
-TIMINGS_PLACEHOLDER
+Warm runs on the M1 Pro (10 cores), 2026-11-11, wrapped in `caffeinate -i`. Other agent
+sessions shared the machine (load average 50–140), so ±30 %; each pair was run back to back,
+twice. Before = `main` (serial `pnpm -r run …`, fresh template store), after = this branch.
+
+| Check | Before | After | Change |
+|---|---|---|---|
+| `pnpm typecheck` | 4.7 s (serial) | 2.0–2.5 s (`--parallel`) | −50 % |
+| `pnpm test` | 7.3 s (serial) | 5.3–5.8 s (`--parallel`) | −25 % |
+| `pnpm build` | 6.8–7.4 s (serial) | 2.5–3.4 s (`--parallel`) | −60 % |
+| `scripts/verify-template.sh` | 8.2 s (fresh pnpm store each run; ~14 s with a cold OS cache) | 3.5 s (persistent store) | −55 % |
+| migrate `LineIndex … counting newlines` test | 391 ms | 14 ms | one array compare per seed |
+| dev-check self-tests | — | 0.5 s | new |
+| **all `ci.yml` steps** | 27 s (sum of the four above, run by hand) | **22 s** (`dev-check full`, incl. install check and self-tests) | −20 % |
+
+`dev-check` on three sample diffs (`--base HEAD`, one-line change):
+
+| Diff | `fast` | `push` | `full` |
+|---|---|---|---|
+| leaf: `packages/service/src/cli.ts` | 3 s (service typecheck + test) | 11 s | 23 s |
+| root package: `packages/contract/src/paths.test.ts` | 13 s (all six packages) | 13 s | 30 s |
+| config: `pnpm-workspace.yaml` | → full, 17–38 s | → full | 17 s |
+
+The `pnpm-workspace.yaml` spread (17 s vs 38 s for the same steps) is machine load, not the
+change.
+
+A run where the Mac dropped into deep idle mid-test (on battery, 2026-11-11) took 3633 s and
+failed; the same suite then passed three times in a row in 5–7 s. If a local run takes
+minutes and fails, check `pmset -g log` for a sleep before chasing a flake, and run long
+checks under `caffeinate -i`.
 
 ## Notes
 
